@@ -406,7 +406,7 @@ public:
                 m_lineLength = 0;
             }
 
-            fprintf(stream, "%u, ", value);
+            fprintf(stream, "%u,", value);
 
             if (value < 10)
                 m_lineLength += 3;
@@ -419,8 +419,11 @@ public:
         return true;
     }
 
-    void WriteTextPreamble(const char* shaderName)
-    { fprintf(stream, "const uint8_t %s[] = {", shaderName); }
+    void WriteTextPreamble(const char* shaderName, const std::string& combinedDefines)
+    {
+        fprintf(stream, "// {%s}\n", combinedDefines.c_str());
+        fprintf(stream, "const uint8_t %s[] = {", shaderName);
+    }
 
     void WriteTextEpilog()
     { fprintf(stream, "\n};\n"); }
@@ -464,7 +467,7 @@ void DumpShader(const TaskData& taskData, const uint8_t* data, size_t dataSize)
             return;
 
         string shaderName = GetShaderName(taskData.outputFileWithoutExt);
-        context.WriteTextPreamble(shaderName.c_str());
+        context.WriteTextPreamble(shaderName.c_str(), taskData.combinedDefines);
         context.WriteDataAsText(data, dataSize);
         context.WriteTextEpilog();
     }
@@ -1664,7 +1667,7 @@ void ExeCompile()
                 if (context.stream)
                 {
                     string shaderName = GetShaderName(taskData.outputFileWithoutExt);
-                    context.WriteTextPreamble(shaderName.c_str());
+                    context.WriteTextPreamble(shaderName.c_str(), taskData.combinedDefines);
                     context.WriteDataAsText(buffer.data(), buffer.size());
                     context.WriteTextEpilog();
 
@@ -1996,7 +1999,7 @@ bool CreateBlob(const string& blobName, const vector<BlobEntry>& entries, bool u
     if (useTextOutput)
     {
         string name = GetShaderName(blobName);
-        outputContext.WriteTextPreamble(name.c_str());
+        outputContext.WriteTextPreamble(name.c_str(), "");
     }
 
     ShaderMake::WriteFileCallback writeFileCallback = useTextOutput
