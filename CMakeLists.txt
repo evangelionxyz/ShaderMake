@@ -30,10 +30,6 @@ set (CMAKE_CXX_STANDARD_REQUIRED ON)
 set (CMAKE_C_STANDARD 99)
 
 if (MSVC)
-    if (NOT DEFINED CMAKE_MSVC_RUNTIME_LIBRARY)
-        set (CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
-    endif()
-
     # Test the Windows SDK version to make sure that we can compile ShaderMake.
     # ShaderMake uses some relatively new APIs for DXC, and there's no straightforward way to test
     # if they're declared in the SDK headers. So, test it here to prevent obscure errors.
