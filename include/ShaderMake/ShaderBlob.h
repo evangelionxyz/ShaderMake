@@ -78,4 +78,9 @@ bool WritePermutation(
 	size_t binarySize
 );
 
+std::vector<size_t> GetSortedConstantsIndices(
+	const std::string* constants,
+    size_t numConstants
+);
+
 } // namespace ShaderMake
