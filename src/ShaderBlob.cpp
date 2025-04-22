@@ -57,15 +57,15 @@ bool FindPermutationInBlob(const void* blob, size_t blobSize, const ShaderConsta
     blob = static_cast<const char*>(blob) + g_BlobSignatureSize;
     blobSize -= g_BlobSignatureSize;
 
-	// Making a vector of constant names to sort them
-	std::vector<std::string> constantNames((size_t)numConstants);
+    // Making a vector of constant names to sort them
+    std::vector<std::string> constantNames((size_t)numConstants);
     for (uint32_t n = 0; n < numConstants; n++)
     {
-		const ShaderConstant& constant = constants[n];
-		constantNames[n] = constant.name;
+        const ShaderConstant& constant = constants[n];
+        constantNames[n] = constant.name;
     }
-	// Sorting constant names
-	std::vector<size_t> sortedConstantsIndices = GetSortedConstantsIndices(constantNames.data(), constantNames.size());
+    // Sorting constant names
+    std::vector<size_t> sortedConstantsIndices = GetSortedConstantsIndices(constantNames.data(), constantNames.size());
 
     std::stringstream ss;
     for (uint32_t n = 0; n < numConstants; n++)
@@ -208,21 +208,19 @@ bool WritePermutation(
 
 
 std::vector<size_t> GetSortedConstantsIndices(
-    const std::string* constants,
-    size_t numConstants
+    const std::vector<std::string>& constants
 )
 {
     // Sorting defines indices to have defines sorted order. Example -> ["B", "A", "C"] -> [1, 0, 2]
-    (constants);
     // initialize original index locations
-    std::vector<size_t> sortedDefinesIndices(numConstants);
+    std::vector<size_t> sortedDefinesIndices(constants.size());
     iota(sortedDefinesIndices.begin(), sortedDefinesIndices.end(), 0);
 
     // sort indexes based on comparing defines in constants
     // using std::stable_sort instead of std::sort
     // to avoid unnecessary index re-orderings
     // when constants contains elements of equal values 
-    std::stable_sort(sortedDefinesIndices.begin(), sortedDefinesIndices.end(), [constants, numConstants](size_t i1, size_t i2) { return constants[i1] < constants[i2]; });
+    std::stable_sort(sortedDefinesIndices.begin(), sortedDefinesIndices.end(), [constants](size_t i1, size_t i2) { return constants[i1] < constants[i2]; });
 
     return sortedDefinesIndices;
 }

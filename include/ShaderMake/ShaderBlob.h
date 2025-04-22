@@ -66,21 +66,20 @@ std::string FormatShaderNotFoundMessage(
 typedef bool (*WriteFileCallback)(const void* data, size_t size, void* context);
 
 bool WriteFileHeader(
-	WriteFileCallback write,
+    WriteFileCallback write,
     void* context
 );
 
 bool WritePermutation(
-	WriteFileCallback write,
+    WriteFileCallback write,
     void* context,
-	const std::string& permutationKey,
-	const void* binary,
-	size_t binarySize
+    const std::string& permutationKey,
+    const void* binary,
+    size_t binarySize
 );
 
 std::vector<size_t> GetSortedConstantsIndices(
-	const std::string* constants,
-    size_t numConstants
+    const std::vector<std::string>& constants
 );
 
 } // namespace ShaderMake

@@ -1831,13 +1831,13 @@ bool ProcessConfigLine(uint32_t lineIndex, const string& line, const fs::file_ti
 
     // Getting the sorted index of defines. While doing this, the value of defines are also get included in sorting problem
     // but it doesn't matter until two defines keys are identical which is not the case.
-	vector<size_t> definesSortedIndices = ShaderMake::GetSortedConstantsIndices(configLine.defines.data(), configLine.defines.size());
+    vector<size_t> definesSortedIndices = ShaderMake::GetSortedConstantsIndices(configLine.defines.data(), configLine.defines.size());
 
     // Concatenate define strings, i.e. to get something, like: "A=1 B=0 C"
     string combinedDefines = "";
     for (size_t i = 0; i < configLine.defines.size(); i++)
     {
-		size_t sortedIndex = definesSortedIndices[i];
+        size_t sortedIndex = definesSortedIndices[i];
         combinedDefines += configLine.defines[sortedIndex];
         if (i != configLine.defines.size() - 1 )
             combinedDefines += " ";
