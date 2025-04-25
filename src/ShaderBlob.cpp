@@ -65,7 +65,7 @@ bool FindPermutationInBlob(const void* blob, size_t blobSize, const ShaderConsta
         constantNames[n] = constant.name;
     }
     // Sorting constant names
-    std::vector<size_t> sortedConstantsIndices = GetSortedConstantsIndices(constantNames.data(), constantNames.size());
+    std::vector<size_t> sortedConstantsIndices = GetSortedConstantsIndices(constantNames);
 
     std::stringstream ss;
     for (uint32_t n = 0; n < numConstants; n++)
@@ -220,7 +220,8 @@ std::vector<size_t> GetSortedConstantsIndices(
     // using std::stable_sort instead of std::sort
     // to avoid unnecessary index re-orderings
     // when constants contains elements of equal values 
-    std::stable_sort(sortedDefinesIndices.begin(), sortedDefinesIndices.end(), [constants](size_t i1, size_t i2) { return constants[i1] < constants[i2]; });
+    std::stable_sort(sortedDefinesIndices.begin(), sortedDefinesIndices.end(),
+        [&constants](size_t i1, size_t i2) { return constants[i1] < constants[i2]; });
 
     return sortedDefinesIndices;
 }
