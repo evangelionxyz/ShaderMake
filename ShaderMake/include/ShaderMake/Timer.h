@@ -35,24 +35,29 @@ namespace ShaderMake {
 
     class Timer
     {
-    public:
+    private:
         double ticksToMilliseconds = 0.0;
+
+    public:
+        double start = 0.0;
 
         Timer()
         {
 #ifdef _WIN32
             uint64_t ticksPerSecond = 1;
             QueryPerformanceFrequency((LARGE_INTEGER *)&ticksPerSecond);
-
             ticksToMilliseconds = 1000.0 / ticksPerSecond;
 #else
             ticksToMilliseconds = 1.0 / 1000000.0;
 #endif
+            start = ticksToMilliseconds;
         }
 
-        double ConvertTicksToMilliseconds(uint64_t ticks)
+        double GetElapsedTime()
         {
-            return (double)ticks * ticksToMilliseconds;
+            uint64_t ticks = GetTicks();
+            double end = (double)ticks * ticksToMilliseconds;
+            return end - start;
         }
 
         uint64_t GetTicks()

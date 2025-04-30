@@ -80,6 +80,7 @@ int AddLocalDefine(struct argparse *self, const struct argparse_option *option)
 
 }
 
+#if 0
 bool Options::Parse(int32_t argc, const char **argv)
 {
     const char *config = nullptr;
@@ -90,14 +91,13 @@ bool Options::Parse(int32_t argc, const char **argv)
     struct argparse_option options[] = {
         OPT_HELP(),
         OPT_GROUP("Required options:"),
-            OPT_STRING('p', "platform", &platformName, "DXBC, DXIL or SPIRV", nullptr, 0, 0),
             OPT_STRING('c', "config", &config, "Configuration file with the list of shaders to compile", nullptr, 0, 0),
             OPT_STRING('o', "out", &outputDir, "Output directory", nullptr, 0, 0),
             OPT_BOOLEAN('b', "binary", &binary, "Output binary files", nullptr, 0, 0),
             OPT_BOOLEAN('h', "header", &header, "Output header files", nullptr, 0, 0),
             OPT_BOOLEAN('B', "binaryBlob", &binaryBlob, "Output binary blob files", nullptr, 0, 0),
             OPT_BOOLEAN('H', "headerBlob", &headerBlob, "Output header blob files", nullptr, 0, 0),
-            OPT_STRING(0, "compiler", &compiler, "Path to a FXC/DXC/Slang compiler executable", nullptr, 0, 0),
+            OPT_STRING(0, "compiler", &compilerPath, "Path to a FXC/DXC/Slang compiler executable", nullptr, 0, 0),
         OPT_GROUP("Compiler settings:"),
             OPT_STRING('m', "shaderModel", &shaderModel, "Shader model for DXIL/SPIRV (always SM 5.0 for DXBC) in 'X_Y' format", nullptr, 0, 0),
             OPT_INTEGER('O', "optimization", &optimizationLevel, "Optimization level 0-3 (default = 3, disabled = 0)", nullptr, 0, 0),
@@ -151,6 +151,8 @@ bool Options::Parse(int32_t argc, const char **argv)
     argparse_describe(&argparse, nullptr, "\nMulti-threaded shader compiling & processing tool");
     argparse_parse(&argparse, argc, argv);
 
+    const std::string platformName = Utils::PlatformToString(platformType);
+
 #ifndef _WIN32
     useAPI = false;
 #endif
@@ -167,7 +169,7 @@ bool Options::Parse(int32_t argc, const char **argv)
         return false;
     }
 
-    if (!outputDir)
+    if (outputDir.empty())
     {
         Utils::Printf(RED "ERROR: Output directory not specified!\n");
         return false;
@@ -178,21 +180,22 @@ bool Options::Parse(int32_t argc, const char **argv)
         Utils::Printf(RED "ERROR: One of 'binary', 'header', 'binaryBlob' or 'headerBlob' must be set!\n");
         return false;
     }
-    if (!platformName)
+
+    if (platformName.empty())
     {
         Utils::Printf(RED "ERROR: Platform not specified!\n");
         return false;
     }
 
-    if (!compiler)
+    if (compilerPath.empty())
     {
         Utils::Printf(RED "ERROR: Compiler not specified!\n");
         return false;
     }
 
-    if (!std::filesystem::exists(compiler))
+    if (!std::filesystem::exists(compilerPath))
     {
-        Utils::Printf(RED "ERROR: Compiler '%s' does not exist!\n", compiler);
+        Utils::Printf(RED "ERROR: Compiler '%s' does not exist!\n", compilerPath.c_str());
         return false;
     }
 
@@ -202,58 +205,59 @@ bool Options::Parse(int32_t argc, const char **argv)
         return false;
     }
 
-    if (strlen(shaderModel) != 3 || strstr(shaderModel, "."))
+    if (strlen(shaderModel.c_str()) != 3 || strstr(shaderModel.c_str(), "."))
     {
-        Utils::Printf(RED "ERROR: Shader model ('%s') must have format 'X_Y'!\n", shaderModel);
+        Utils::Printf(RED "ERROR: Shader model ('%s') must have format 'X_Y'!\n", shaderModel.c_str());
         return false;
     }
 
     // Platform
     uint32_t i = 0;
-    for (; i < Platform_NUM; i++)
+    for (; i < PlatformType_NUM; i++)
     {
-        if (!strcmp(platformName, PlatformNames[i]))
+        if (platformName == Utils::PlatformToString(static_cast<PlatformType>(i)))
         {
-            platform = (Platform)i;
+            platformType = static_cast<PlatformType>(i);
             break;
         }
     }
-    if (i == Platform_NUM)
+
+    if (i == PlatformType_NUM)
     {
-        Utils::Printf(RED "ERROR: Unrecognized platform '%s'!\n", platformName);
+        Utils::Printf(RED "ERROR: Unrecognized platform '%s'!\n", platformName.c_str());
         return false;
     }
 
-    if (outputExt)
+    if (!outputExt.empty())
         outputExt = outputExt;
     else
-        outputExt = PlatformExts[platform];
+        outputExt = Utils::PlatformExtension(platformType);
 
-    if (vulkanMemoryLayout && platform != Platform_SPIRV)
+    if (!vulkanMemoryLayout.empty() && platformType != PlatformType_SPIRV)
     {
         Utils::Printf(RED "ERROR: --vulkanMemoryLayout is only supported for SPIRV target!\n");
         return false;
     }
 
-    if (vulkanMemoryLayout &&
-        strcmp(vulkanMemoryLayout, "dx") != 0 &&
-        strcmp(vulkanMemoryLayout, "gl") != 0 &&
-        strcmp(vulkanMemoryLayout, "scalar") != 0)
+    if (!vulkanMemoryLayout.empty() &&
+        strcmp(vulkanMemoryLayout.c_str(), "dx") != 0 &&
+        strcmp(vulkanMemoryLayout.c_str(), "gl") != 0 &&
+        strcmp(vulkanMemoryLayout.c_str(), "scalar") != 0)
     {
-        if (slang && (strcmp(vulkanMemoryLayout, "dx") == 0))
+        if (slang && (strcmp(vulkanMemoryLayout.c_str(), "dx") == 0))
         {
             Utils::Printf(RED "ERROR: Unsupported value '%s' for --vulkanMemoryLayout! Only 'gl' and 'scalar' are supported for Slang.\n",
-                vulkanMemoryLayout);
+                vulkanMemoryLayout.c_str());
         }
         else
         {
             Utils::Printf(RED "ERROR: Unsupported value '%s' for --vulkanMemoryLayout! Only 'dx', 'gl' and 'scalar' are supported.\n",
-                vulkanMemoryLayout);
+                vulkanMemoryLayout.c_str());
         }
         return false;
     }
 
-    if (!compilerOptions.empty() && useAPI && platform == Platform_DXBC)
+    if (!compilerOptions.empty() && useAPI && platformType == PlatformType_DXBC)
     {
         Utils::Printf(RED "ERROR: --compilerOptions is not compatible with '--platform DXBC --useAPI'!\n");
         return false;
@@ -304,6 +308,7 @@ bool Options::Parse(int32_t argc, const char **argv)
 
     return true;
 }
+#endif
 
 bool Context::GetHierarchicalUpdateTime(const std::filesystem::path &file, std::list<std::filesystem::path> &callStack, std::filesystem::file_time_type &outTime)
 {
@@ -340,7 +345,7 @@ bool Context::GetHierarchicalUpdateTime(const std::filesystem::path &file, std::
             continue;
 
         std::filesystem::path includeName = std::string(matchResult[1]);
-        if (std::find(options.relaxedIncludes.begin(), options.relaxedIncludes.end(), includeName) != options.relaxedIncludes.end())
+        if (std::find(options->relaxedIncludes.begin(), options->relaxedIncludes.end(), includeName) != options->relaxedIncludes.end())
             continue;
 
         bool isFound = false;
@@ -349,7 +354,7 @@ bool Context::GetHierarchicalUpdateTime(const std::filesystem::path &file, std::
             isFound = true;
         else
         {
-            for (const std::filesystem::path &includePath : options.includeDirs)
+            for (const std::filesystem::path &includePath : options->includeDirs)
             {
                 includeFile = includePath / includeName;
                 if (std::filesystem::exists(includeFile))
@@ -388,16 +393,16 @@ std::string Context::GetShaderName(const std::filesystem::path &path)
 {
     std::string name = path.filename().string();
     replace(name.begin(), name.end(), '.', '_');
-    name += "_" + std::string(PlatformExts[options.platform] + 1);
+    name += "_" + std::string(Utils::PlatformExtension(options->platformType));
 
     return "g_" + name;
 }
 
 void Context::DumpShader(const TaskData &taskData, const uint8_t *data, size_t dataSize)
 {
-    std::string file = taskData.outputFileWithoutExt + outputExt;
+    std::string file = taskData.outputFileWithoutExt + options->outputExt;
 
-    if (options.binary || options.binaryBlob || (options.headerBlob && !taskData.combinedDefines.empty()))
+    if (options->binary || options->binaryBlob || (options->headerBlob && !taskData.combinedDefines.empty()))
     {
         DataOutputContext context(this, file.c_str(), false);
         if (!context.stream)
@@ -406,7 +411,7 @@ void Context::DumpShader(const TaskData &taskData, const uint8_t *data, size_t d
         context.WriteDataAsBinary(data, dataSize);
     }
 
-    if (options.header || (options.headerBlob && taskData.combinedDefines.empty()))
+    if (options->header || (options->headerBlob && taskData.combinedDefines.empty()))
     {
         DataOutputContext context(this, (file + ".h").c_str(), true);
         if (!context.stream)
@@ -428,16 +433,15 @@ bool Context::ProcessConfigLine(uint32_t lineIndex, const std::string &line, con
 
     // Parse config line
     ConfigLine configLine;
-    if (!configLine.Parse((int32_t)tokens.size(), tokens.data(), options))
+    if (!configLine.Parse((int32_t)tokens.size(), tokens.data(), *options))
     {
-        Utils::Printf(RED "%s(%u,0): ERROR: Can't parse config line!\n", Utils::PathToString(options.configFile).c_str(), lineIndex + 1);
-
+        Utils::Printf(RED "%s(%u,0): ERROR: Can't parse config line!\n", Utils::PathToString(options->configFile).c_str(), lineIndex + 1);
         return false;
     }
 
     // DXBC: skip unsupported profiles
     std::string profile = configLine.profile;
-    if (options.platform == Platform_DXBC && (profile == "lib" || profile == "ms" || profile == "as"))
+    if (options->platformType == PlatformType_DXBC && (profile == "lib" || profile == "ms" || profile == "as"))
         return true;
 
     // Getting the sorted index of defines. While doing this, the value of defines are also get included in sorting problem
@@ -457,7 +461,7 @@ bool Context::ProcessConfigLine(uint32_t lineIndex, const std::string &line, con
     // Compiled shader name
     std::filesystem::path shaderName = Utils::RemoveLeadingDotDots(configLine.source);
     shaderName.replace_extension("");
-    if (options.flatten || configLine.outputDir) // Specifying -o <path> for a shader removes the original path
+    if (options->flatten || configLine.outputDir) // Specifying -o <path> for a shader removes the original path
         shaderName = shaderName.filename();
     if (strcmp(configLine.entryPoint, "main"))
         shaderName += "_" + std::string(configLine.entryPoint);
@@ -477,14 +481,14 @@ bool Context::ProcessConfigLine(uint32_t lineIndex, const std::string &line, con
     }
 
     // Output directory
-    std::filesystem::path outputDir = options.outputDir;
+    std::filesystem::path outputDir = options->outputDir;
     if (configLine.outputDir)
         outputDir /= configLine.outputDir;
 
     // Create intermediate output directories
-    bool force = options.force;
+    bool force = options->force;
     std::filesystem::path endPath = outputDir / shaderName.parent_path();
-    if (options.pdb)
+    if (options->pdb)
         endPath /= PDB_DIR;
     if (endPath.string() != "" && !std::filesystem::exists(endPath))
     {
@@ -499,8 +503,8 @@ bool Context::ProcessConfigLine(uint32_t lineIndex, const std::string &line, con
     {
         std::filesystem::path outputFile = outputDir / permutationName;
 
-        outputFile += this->outputExt;
-        if (options.binary)
+        outputFile += options->outputExt;
+        if (options->binary)
         {
             force |= !std::filesystem::exists(outputFile);
             if (!force)
@@ -513,7 +517,7 @@ bool Context::ProcessConfigLine(uint32_t lineIndex, const std::string &line, con
         }
 
         outputFile += ".h";
-        if (options.header)
+        if (options->header)
         {
             force |= !std::filesystem::exists(outputFile);
             if (!force)
@@ -529,8 +533,8 @@ bool Context::ProcessConfigLine(uint32_t lineIndex, const std::string &line, con
     {
         std::filesystem::path outputFile = outputDir / shaderName;
 
-        outputFile += this->outputExt;
-        if (options.binaryBlob)
+        outputFile += options->outputExt;
+        if (options->binaryBlob)
         {
             force |= !std::filesystem::exists(outputFile);
             if (!force)
@@ -543,7 +547,7 @@ bool Context::ProcessConfigLine(uint32_t lineIndex, const std::string &line, con
         }
 
         outputFile += ".h";
-        if (options.headerBlob)
+        if (options->headerBlob)
         {
             force |= !std::filesystem::exists(outputFile);
             if (!force)
@@ -560,7 +564,7 @@ bool Context::ProcessConfigLine(uint32_t lineIndex, const std::string &line, con
     {
         std::list<std::filesystem::path> callStack;
         std::filesystem::file_time_type sourceTime;
-        std::filesystem::path sourceFile = options.sourceDir / configLine.source;
+        std::filesystem::path sourceFile = options->configFile.parent_path() / configLine.source;
         if (!GetHierarchicalUpdateTime(sourceFile, callStack, sourceTime))
             return false;
 
@@ -571,7 +575,7 @@ bool Context::ProcessConfigLine(uint32_t lineIndex, const std::string &line, con
 
     // Prepare a task
     std::string outputFileWithoutExt = Utils::PathToString(outputDir / permutationName);
-    uint32_t optimizationLevel = configLine.optimizationLevel == USE_GLOBAL_OPTIMIZATION_LEVEL ? options.optimizationLevel : configLine.optimizationLevel;
+    uint32_t optimizationLevel = configLine.optimizationLevel == USE_GLOBAL_OPTIMIZATION_LEVEL ? options->optimizationLevel : configLine.optimizationLevel;
     optimizationLevel = std::min(optimizationLevel, 3u);
 
     TaskData &taskData = tasks.emplace_back();
@@ -585,7 +589,7 @@ bool Context::ProcessConfigLine(uint32_t lineIndex, const std::string &line, con
     taskData.optimizationLevel = optimizationLevel;
 
     // Gather blobs
-    if (options.IsBlob())
+    if (options->IsBlob())
     {
         std::string blobName = Utils::PathToString(outputDir / shaderName);
         std::vector<BlobEntry> &entries = this->shaderBlobs[blobName];
@@ -599,7 +603,6 @@ bool Context::ProcessConfigLine(uint32_t lineIndex, const std::string &line, con
     return true;
 }
 
-
 bool Context::ExpandPermutations(uint32_t lineIndex, const std::string &line, const std::filesystem::file_time_type &configTime)
 {
     size_t opening = line.find('{');
@@ -609,8 +612,7 @@ bool Context::ExpandPermutations(uint32_t lineIndex, const std::string &line, co
     size_t closing = line.find('}', opening);
     if (closing == std::string::npos)
     {
-        Utils::Printf(RED "%s(%u,0): ERROR: Missing '}'!\n", Utils::PathToString(options.configFile).c_str(), lineIndex + 1);
-
+        Utils::Printf(RED "%s(%u,0): ERROR: Missing '}'!\n", Utils::PathToString(options->configFile).c_str(), lineIndex + 1);
         return false;
     }
 
@@ -637,14 +639,14 @@ bool Context::CreateBlob(const std::string &blobName, const std::vector<BlobEntr
 {
     // Create output file
     std::string outputFile = blobName;
-    outputFile += outputExt;
+    outputFile += options->outputExt;
     if (useTextOutput)
         outputFile += ".h";
 
     DataOutputContext outputContext(this, outputFile.c_str(), useTextOutput);
     if (!outputContext.stream)
     {
-        Utils::Printf(RED "ERROR: Can't open output file '%s'!\n", outputFile.c_str());
+        Utils::Printf(RED "ERROR: Can''t open 'output file '%s'!\n", outputFile.c_str());
         return false;
     }
 
@@ -671,7 +673,7 @@ bool Context::CreateBlob(const std::string &blobName, const std::vector<BlobEntr
     for (const BlobEntry &entry : entries)
     {
         // Open compiled permutation file
-        std::string file = entry.permutationFileWithoutExt + outputExt;
+        std::string file = entry.permutationFileWithoutExt + options->outputExt;
         std::vector<uint8_t> fileData;
         if (Utils::ReadBinaryFile(file.c_str(), fileData))
         {
@@ -698,16 +700,37 @@ void Context::RemoveIntermediateBlobFiles(const std::vector<BlobEntry> &entries)
 {
     for (const BlobEntry &entry : entries)
     {
-        std::string file = entry.permutationFileWithoutExt + outputExt;
+        std::string file = entry.permutationFileWithoutExt + options->outputExt;
         std::filesystem::remove(file);
     }
 }
 
-void Context::SignalHandler(int32_t sig)
+Context::Context(Options *opts)
+    : options(opts)
 {
-    UNUSED(sig);
-    terminate = true;
-    Utils::Printf(RED "Aborting...\n");
+    ProcessOptions();
+}
+
+void Context::ProcessOptions()
+{
+    if (!options)
+        return;
+
+    const std::string vulkanSDKPath = std::getenv("VULKAN_SDK");
+    if (vulkanSDKPath.empty())
+        return;
+
+#if _WIN32
+    options->compilerPath = vulkanSDKPath + "/Bin/" + Utils::CompilerExecutablePath(options->compilerType);
+    SetDllDirectoryA(options->compilerPath.parent_path().generic_string().c_str());
+#endif
+
+    // TODO: auto select by the compilation options
+    options->outputExt = Utils::PlatformExtension(options->platformType);
+
+    options->binaryBlob = true;
+    options->binary = true;
+    options->colorize = true;
 }
 
 DataOutputContext::DataOutputContext(Context *ctx, const char *file, bool textMode)
@@ -809,7 +832,7 @@ bool ConfigLine::Parse(int32_t argc, const char **argv, const Options &opts)
     argparse_parse(&argparse, argc, argv);
 
     if (!shaderModel)
-        shaderModel = opts.shaderModel;
+        shaderModel = opts.shaderModel.c_str();
 
     // If there are some non-option elements in the config line, they will remain in the argv array.
     if (argv[0])
@@ -833,21 +856,18 @@ bool ConfigLine::Parse(int32_t argc, const char **argv, const Options &opts)
     return true;
 }
 
-TaskData::TaskData(Context *ctx)
-    : m_Ctx(ctx)
+void TaskData::UpdateProgress(Context *ctx, bool isSucceeded, bool willRetry, const char *message)
 {
-}
-
-void TaskData::UpdateProgress(bool isSucceeded, bool willRetry, const char *message)
-{
+    const std::string platformName = Utils::PlatformToString(ctx->options->platformType);
     if (isSucceeded)
     {
-        float progress = 100.0f * float(++m_Ctx->processedTaskCount) / float(m_Ctx->originalTaskCount);
+        float progress = 100.0f * float(++ctx->processedTaskCount) / float(ctx->originalTaskCount);
 
         if (message)
         {
             Utils::Printf(YELLOW "[%5.1f%%] %s %s {%s} {%s}\n%s",
-                progress, m_Ctx->options.platformName,
+                progress,
+                platformName.c_str(),
                 source.c_str(),
                 entryPoint.c_str(),
                 combinedDefines.c_str(),
@@ -856,7 +876,8 @@ void TaskData::UpdateProgress(bool isSucceeded, bool willRetry, const char *mess
         else
         {
             Utils::Printf(GREEN "[%5.1f%%]" GRAY " %s" WHITE " %s" GRAY " {%s}" WHITE " {%s}\n",
-                progress, m_Ctx->options.platformName,
+                progress,
+                platformName.c_str(),
                 source.c_str(),
                 entryPoint.c_str(),
                 combinedDefines.c_str());
@@ -867,29 +888,29 @@ void TaskData::UpdateProgress(bool isSucceeded, bool willRetry, const char *mess
         if (willRetry)
         {
             Utils::Printf(YELLOW "[ RETRY-QUEUED ] %s %s {%s} {%s}\n",
-                m_Ctx->options.platformName,
+                platformName.c_str(),
                 source.c_str(),
                 entryPoint.c_str(),
                 combinedDefines.c_str());
 
-            std::lock_guard<std::mutex> guard(m_Ctx->taskMutex);
-            m_Ctx->tasks.push_back(*this);
+            std::lock_guard<std::mutex> guard(ctx->taskMutex);
+            ctx->tasks.push_back(*this);
 
-            --m_Ctx->taskRetryCount;
+            --ctx->taskRetryCount;
         }
         else
         {
             Utils::Printf(RED "[ FAIL ] %s %s {%s} {%s}\n%s",
-                m_Ctx->options.platformName,
+                platformName.c_str(),
                 source.c_str(),
                 entryPoint.c_str(),
                 combinedDefines.c_str(),
                 message ? message : "<no message text>!\n");
 
-            if (!m_Ctx->options.continueOnError)
-                m_Ctx->terminate = true;
+            if (!ctx->options->continueOnError)
+                ctx->terminate = true;
 
-            ++m_Ctx->failedTaskCount;
+            ++ctx->failedTaskCount;
         }
     }
 }

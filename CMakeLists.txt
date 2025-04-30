@@ -61,3 +61,4 @@ else ()
 endif ()
 
 add_subdirectory(ShaderMake)
+add_subdirectory(ShaderCompiler)

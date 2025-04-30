@@ -111,6 +111,7 @@ namespace ShaderMake {
     Compiler::Compiler(Context *ctx)
         : m_Ctx(ctx)
     {
+
     }
 
     void Compiler::FxcCompile()
@@ -123,13 +124,13 @@ namespace ShaderMake {
         };
 
         std::vector<D3D_SHADER_MACRO> optionsDefines;
-        std::vector<std::string> tokenizedDefines = m_Ctx->options.defines;
+        std::vector<std::string> tokenizedDefines = m_Ctx->options->defines;
         Utils::TokenizeDefineStrings(tokenizedDefines, optionsDefines);
 
         while (!m_Ctx->terminate)
         {
             // Getting a task in the current thread
-            TaskData taskData(m_Ctx);
+            TaskData taskData;
             {
                 std::lock_guard<std::mutex> guard(m_Ctx->taskMutex);
                 if (m_Ctx->tasks.empty())
@@ -145,16 +146,16 @@ namespace ShaderMake {
             defines.push_back({ nullptr, nullptr });
 
             // Args
-            uint32_t compilerFlags = (m_Ctx->options.pdb ? (D3DCOMPILE_DEBUG | D3DCOMPILE_DEBUG_NAME_FOR_BINARY) : 0) |
-                (m_Ctx->options.allResourcesBound ? D3DCOMPILE_ALL_RESOURCES_BOUND : 0) |
-                (m_Ctx->options.warningsAreErrors ? D3DCOMPILE_WARNINGS_ARE_ERRORS : 0) |
-                (m_Ctx->options.matrixRowMajor ? D3DCOMPILE_PACK_MATRIX_ROW_MAJOR : 0) |
+            uint32_t compilerFlags = (m_Ctx->options->pdb ? (D3DCOMPILE_DEBUG | D3DCOMPILE_DEBUG_NAME_FOR_BINARY) : 0) |
+                (m_Ctx->options->allResourcesBound ? D3DCOMPILE_ALL_RESOURCES_BOUND : 0) |
+                (m_Ctx->options->warningsAreErrors ? D3DCOMPILE_WARNINGS_ARE_ERRORS : 0) |
+                (m_Ctx->options->matrixRowMajor ? D3DCOMPILE_PACK_MATRIX_ROW_MAJOR : 0) |
                 optimizationLevelRemap[taskData.optimizationLevel];
 
             // Compiling the shader
-            std::filesystem::path sourceFile = m_Ctx->options.sourceDir / taskData.source;
+            std::filesystem::path sourceFile = m_Ctx->options->configFile.parent_path() / taskData.source;
 
-            FxcIncluder fxcIncluder(&m_Ctx->options, sourceFile);
+            FxcIncluder fxcIncluder(m_Ctx->options, sourceFile);
             std::string profile = taskData.profile + "_5_0";
 
             ComPtr<ID3DBlob> codeBlob;
@@ -175,7 +176,7 @@ namespace ShaderMake {
                 break;
 
             // Dump PDB
-            if (isSucceeded && m_Ctx->options.pdb)
+            if (isSucceeded && m_Ctx->options->pdb)
             {
                 // Retrieve the debug info part of the shader
                 ComPtr<ID3DBlob> pdb;
@@ -209,7 +210,7 @@ namespace ShaderMake {
 
             // Strip reflection
             ComPtr<ID3DBlob> strippedBlob;
-            if (m_Ctx->options.stripReflection && isSucceeded)
+            if (m_Ctx->options->stripReflection && isSucceeded)
             {
                 D3DStripShader(codeBlob->GetBufferPointer(), codeBlob->GetBufferSize(), D3DCOMPILER_STRIP_REFLECTION_DATA | D3DCOMPILER_STRIP_DEBUG_INFO, &strippedBlob);
                 codeBlob = strippedBlob;
@@ -222,7 +223,7 @@ namespace ShaderMake {
             }
 
             // Update progress
-            taskData.UpdateProgress(isSucceeded, false, errorBlob ? (char *)errorBlob->GetBufferPointer() : nullptr);
+            taskData.UpdateProgress(m_Ctx, isSucceeded, false, errorBlob ? (char *)errorBlob->GetBufferPointer() : nullptr);
 
             // Terminate if this shader failed and "--continue" is not set
             if (m_Ctx->terminate)
@@ -250,7 +251,7 @@ namespace ShaderMake {
         };
 
         std::vector<std::wstring> regShifts;
-        if (!m_Ctx->options.noRegShifts)
+        if (!m_Ctx->options->noRegShifts)
         {
             for (uint32_t reg = 0; reg < 4; reg++)
             {
@@ -260,7 +261,7 @@ namespace ShaderMake {
 
                     regShifts.push_back(regShiftArgs[reg]);
 
-                    swprintf(buf, COUNT_OF(buf), L"%u", (&m_Ctx->options.sRegShift)[reg]);
+                    swprintf(buf, COUNT_OF(buf), L"%u", (&m_Ctx->options->sRegShift)[reg]);
                     regShifts.push_back(std::wstring(buf));
 
                     swprintf(buf, COUNT_OF(buf), L"%u", space);
@@ -307,7 +308,7 @@ namespace ShaderMake {
         while (!m_Ctx->terminate)
         {
             // Getting a task in the current thread
-            TaskData taskData(m_Ctx);
+            TaskData taskData;
             {
                 std::lock_guard<std::mutex> guard(m_Ctx->taskMutex);
                 if (m_Ctx->tasks.empty())
@@ -318,7 +319,7 @@ namespace ShaderMake {
             }
 
             // Compiling the shader
-            std::filesystem::path sourceFile = m_Ctx->options.sourceDir / taskData.source;
+            std::filesystem::path sourceFile = m_Ctx->options->configFile.parent_path() / taskData.source;
             std::wstring wsourceFile = sourceFile.wstring();
 
             ComPtr<IDxcBlob> codeBlob;
@@ -331,8 +332,8 @@ namespace ShaderMake {
             if (SUCCEEDED(hr))
             {
                 std::vector<std::wstring> args;
-                args.reserve(16 + (m_Ctx->options.defines.size() + taskData.defines.size() + m_Ctx->options.includeDirs.size()) * 2
-                    + (m_Ctx->options.platform == Platform_SPIRV ? regShifts.size() + m_Ctx->options.spirvExtensions.size() : 0));
+                args.reserve(16 + (m_Ctx->options->defines.size() + taskData.defines.size() + m_Ctx->options->includeDirs.size()) * 2
+                    + (m_Ctx->options->platformType == PlatformType_SPIRV ? regShifts.size() + m_Ctx->options->spirvExtensions.size() : 0));
 
                 // Source file
                 args.push_back(wsourceFile);
@@ -346,7 +347,7 @@ namespace ShaderMake {
                 args.push_back(Utils::AnsiToWide(taskData.entryPoint));
 
                 // Defines
-                for (const std::string &define : m_Ctx->options.defines)
+                for (const std::string &define : m_Ctx->options->defines)
                 {
                     args.push_back(L"-D");
                     args.push_back(Utils::AnsiToWide(define));
@@ -358,7 +359,7 @@ namespace ShaderMake {
                 }
 
                 // Include directories
-                for (const std::filesystem::path &path : m_Ctx->options.includeDirs)
+                for (const std::filesystem::path &path : m_Ctx->options->includeDirs)
                 {
                     args.push_back(L"-I");
                     args.push_back(path.wstring());
@@ -371,40 +372,40 @@ namespace ShaderMake {
                 if (shaderModelIndex >= 62)
                     args.push_back(L"-enable-16bit-types");
 
-                if (m_Ctx->options.warningsAreErrors)
+                if (m_Ctx->options->warningsAreErrors)
                     args.push_back(DXC_ARG_WARNINGS_ARE_ERRORS);
 
-                if (m_Ctx->options.allResourcesBound)
+                if (m_Ctx->options->allResourcesBound)
                     args.push_back(DXC_ARG_ALL_RESOURCES_BOUND);
 
-                if (m_Ctx->options.matrixRowMajor)
+                if (m_Ctx->options->matrixRowMajor)
                     args.push_back(DXC_ARG_PACK_MATRIX_ROW_MAJOR);
 
-                if (m_Ctx->options.hlsl2021)
+                if (m_Ctx->options->hlsl2021)
                 {
                     args.push_back(L"-HV");
                     args.push_back(L"2021");
                 }
 
-                if (m_Ctx->options.pdb || m_Ctx->options.embedPdb)
+                if (m_Ctx->options->pdb || m_Ctx->options->embedPdb)
                 {
                     // TODO: for SPIRV PDB can only be embedded, GetOutput(DXC_OUT_PDB) silently fails...
                     args.push_back(L"-Zi");
                     args.push_back(L"-Zsb"); // only binary code affects hash
                 }
 
-                if (m_Ctx->options.embedPdb)
+                if (m_Ctx->options->embedPdb)
                     args.push_back(L"-Qembed_debug");
 
-                if (m_Ctx->options.platform == Platform_SPIRV)
+                if (m_Ctx->options->platformType == PlatformType_SPIRV)
                 {
                     args.push_back(L"-spirv");
-                    args.push_back(std::wstring(L"-fspv-target-env=vulkan") + Utils::AnsiToWide(m_Ctx->options.vulkanVersion));
+                    args.push_back(std::wstring(L"-fspv-target-env=vulkan") + Utils::AnsiToWide(m_Ctx->options->vulkanVersion));
 
-                    if (m_Ctx->options.vulkanMemoryLayout)
-                        args.push_back(std::wstring(L"-fvk-use-") + Utils::AnsiToWide(m_Ctx->options.vulkanMemoryLayout) + std::wstring(L"-layout"));
+                    if (!m_Ctx->options->vulkanMemoryLayout.empty())
+                        args.push_back(std::wstring(L"-fvk-use-") + Utils::AnsiToWide(m_Ctx->options->vulkanMemoryLayout) + std::wstring(L"-layout"));
 
-                    for (const std::string &ext : m_Ctx->options.spirvExtensions)
+                    for (const std::string &ext : m_Ctx->options->spirvExtensions)
                         args.push_back(std::wstring(L"-fspv-extension=") + Utils::AnsiToWide(ext));
 
                     for (const std::wstring &arg : regShifts)
@@ -412,17 +413,17 @@ namespace ShaderMake {
                 }
                 else // Not supported by SPIRV gen
                 {
-                    if (m_Ctx->options.stripReflection)
+                    if (m_Ctx->options->stripReflection)
                         args.push_back(L"-Qstrip_reflect");
                 }
 
-                for (std::string const &opts : m_Ctx->options.compilerOptions)
+                for (std::string const &opts : m_Ctx->options->compilerOptions)
                 {
                     Utils::TokenizeCompilerOptions(opts.c_str(), args);
                 }
 
                 // Debug output
-                if (m_Ctx->options.verbose)
+                if (m_Ctx->options->verbose)
                 {
                     std::wstringstream cmd;
                     for (const std::wstring &arg : args)
@@ -463,7 +464,7 @@ namespace ShaderMake {
                 isSucceeded = SUCCEEDED(hr) && codeBlob;
 
                 // Dump PDB
-                if (isSucceeded && m_Ctx->options.pdb)
+                if (isSucceeded && m_Ctx->options->pdb)
                 {
                     ComPtr<IDxcBlob> pdb;
                     ComPtr<IDxcBlobUtf16> pdbName;
@@ -490,7 +491,7 @@ namespace ShaderMake {
             }
 
             // Update progress
-            taskData.UpdateProgress(isSucceeded, false, errorBlob ? (char *)errorBlob->GetBufferPointer() : nullptr);
+            taskData.UpdateProgress(m_Ctx, isSucceeded, false, errorBlob ? (char *)errorBlob->GetBufferPointer() : nullptr);
         }
     }
 
@@ -506,7 +507,7 @@ namespace ShaderMake {
         while (!m_Ctx->terminate)
         {
             // Getting a task in the current thread
-            TaskData taskData(m_Ctx);
+            TaskData taskData;
 
             {
                 std::lock_guard<std::mutex> guard(m_Ctx->taskMutex);
@@ -518,27 +519,25 @@ namespace ShaderMake {
             }
 
             bool convertBinaryOutputToHeader = false;
-            std::string outputFile = taskData.outputFileWithoutExt + m_Ctx->outputExt;
+            std::string outputFile = taskData.outputFileWithoutExt + m_Ctx->options->outputExt;
 
             // Building command line
             std::ostringstream cmd;
             {
-#ifdef _WIN32 // workaround for Windows
-                cmd << "%COMPILER%";
-#else
-                cmd << "$COMPILER";
-#endif
+                cmd << m_Ctx->options->compilerPath.generic_string().c_str(); // call the compiler
 
-                if (m_Ctx->options.slang)
+                if (m_Ctx->options->slang)
                 {
-                    if (m_Ctx->options.header || (m_Ctx->options.headerBlob && taskData.combinedDefines.empty()))
+                    if (m_Ctx->options->header || (m_Ctx->options->headerBlob && taskData.combinedDefines.empty()))
+                    {
                         convertBinaryOutputToHeader = true;
+                    }
 
                     // Slang defaults to slang language mode unless -lang <other language> sets something else.
                     // For HLSL compatibility mode:
                     //    - use -lang hlsl to set language mode to HLSL
                     //    - use -unscoped-enums so Slang doesn't require all enums to be scoped                
-                    if (m_Ctx->options.slangHlsl)
+                    if (m_Ctx->options->slangHlsl)
                     {
                         // Language mode: hlsl
                         cmd << " -lang hlsl";
@@ -551,7 +550,7 @@ namespace ShaderMake {
                     cmd << " -profile " << taskData.profile << "_" << taskData.shaderModel;
 
                     // Target/platform
-                    cmd << " -target " << PlatformSlangTargets[m_Ctx->options.platform];
+                    cmd << " -target " << PlatformSlangTargets[m_Ctx->options->platformType];
 
                     // Output
                     cmd << " -o " << Utils::EscapePath(outputFile);
@@ -567,53 +566,53 @@ namespace ShaderMake {
                     for (const std::string &define : taskData.defines)
                         cmd << " -D " << define;
 
-                    for (const std::string &define : m_Ctx->options.defines)
+                    for (const std::string &define : m_Ctx->options->defines)
                         cmd << " -D " << define;
 
                     // Include directories
-                    for (const std::filesystem::path &dir : m_Ctx->options.includeDirs)
+                    for (const std::filesystem::path &dir : m_Ctx->options->includeDirs)
                         cmd << " -I " << Utils::EscapePath(dir.string());
 
                     // Optimization level
                     cmd << " -O" << taskData.optimizationLevel;
 
                     // Warnings as errors
-                    if (m_Ctx->options.warningsAreErrors)
+                    if (m_Ctx->options->warningsAreErrors)
                         cmd << " -warnings-as-errors";
 
                     // Matrix layout
-                    if (m_Ctx->options.matrixRowMajor)
+                    if (m_Ctx->options->matrixRowMajor)
                         cmd << " -matrix-layout-row-major";
                     else
                         cmd << " -matrix-layout-column-major";
 
-                    if (m_Ctx->options.platform == Platform_SPIRV)
+                    if (m_Ctx->options->platformType == PlatformType_SPIRV)
                     {
                         // Uses the entrypoint name from the source instead of 'main' in the SPIRV output
                         cmd << " -fvk-use-entrypoint-name";
 
-                        if (m_Ctx->options.vulkanMemoryLayout)
+                        if (!m_Ctx->options->vulkanMemoryLayout.empty())
                         {
-                            if (strcmp(m_Ctx->options.vulkanMemoryLayout, "scalar") == 0)
+                            if (strcmp(m_Ctx->options->vulkanMemoryLayout.c_str(), "scalar") == 0)
                                 cmd << " -force-glsl-scalar-layout";
-                            else if (strcmp(m_Ctx->options.vulkanMemoryLayout, "gl") == 0)
+                            else if (strcmp(m_Ctx->options->vulkanMemoryLayout.c_str(), "gl") == 0)
                                 cmd << " -fvk-use-gl-layout";
                         }
 
-                        if (!m_Ctx->options.noRegShifts)
+                        if (!m_Ctx->options->noRegShifts)
                         {
                             for (uint32_t space = 0; space < SPIRV_SPACES_NUM; space++)
                             {
-                                cmd << " -fvk-s-shift " << m_Ctx->options.sRegShift << " " << space;
-                                cmd << " -fvk-t-shift " << m_Ctx->options.tRegShift << " " << space;
-                                cmd << " -fvk-b-shift " << m_Ctx->options.bRegShift << " " << space;
-                                cmd << " -fvk-u-shift " << m_Ctx->options.uRegShift << " " << space;
+                                cmd << " -fvk-s-shift " << m_Ctx->options->sRegShift << " " << space;
+                                cmd << " -fvk-t-shift " << m_Ctx->options->tRegShift << " " << space;
+                                cmd << " -fvk-b-shift " << m_Ctx->options->bRegShift << " " << space;
+                                cmd << " -fvk-u-shift " << m_Ctx->options->uRegShift << " " << space;
                             }
                         }
                     }
 
                     // Custom options
-                    for (std::string const &opts : m_Ctx->options.compilerOptions)
+                    for (std::string const &opts : m_Ctx->options->compilerOptions)
                         cmd << " " << opts;
                 }
                 else
@@ -621,9 +620,9 @@ namespace ShaderMake {
                     cmd << " -nologo";
 
                     // Output file
-                    if (m_Ctx->options.binary || m_Ctx->options.binaryBlob || (m_Ctx->options.headerBlob && !taskData.combinedDefines.empty()))
+                    if (m_Ctx->options->binary || m_Ctx->options->binaryBlob || (m_Ctx->options->headerBlob && !taskData.combinedDefines.empty()))
                         cmd << " -Fo " << Utils::EscapePath(outputFile);
-                    if (m_Ctx->options.header || (m_Ctx->options.headerBlob && taskData.combinedDefines.empty()))
+                    if (m_Ctx->options->header || (m_Ctx->options->headerBlob && taskData.combinedDefines.empty()))
                     {
                         std::string name = m_Ctx->GetShaderName(taskData.outputFileWithoutExt);
 
@@ -633,7 +632,7 @@ namespace ShaderMake {
 
                     // Profile
                     std::string profile = taskData.profile + "_";
-                    if (m_Ctx->options.platform == Platform_DXBC)
+                    if (m_Ctx->options->platformType == PlatformType_DXBC)
                         profile += "5_0";
                     else
                         profile += taskData.shaderModel;
@@ -646,67 +645,67 @@ namespace ShaderMake {
                     for (const std::string &define : taskData.defines)
                         cmd << " -D " << define;
 
-                    for (const std::string &define : m_Ctx->options.defines)
+                    for (const std::string &define : m_Ctx->options->defines)
                         cmd << " -D " << define;
 
                     // Include directories
-                    for (const std::filesystem::path &dir : m_Ctx->options.includeDirs)
+                    for (const std::filesystem::path &dir : m_Ctx->options->includeDirs)
                         cmd << " -I " << Utils::EscapePath(dir.string());
 
                     // Args
                     cmd << optimizationLevelRemap[taskData.optimizationLevel];
 
                     uint32_t shaderModelIndex = (taskData.shaderModel[0] - '0') * 10 + (taskData.shaderModel[2] - '0');
-                    if (m_Ctx->options.platform != Platform_DXBC && shaderModelIndex >= 62)
+                    if (m_Ctx->options->platformType != PlatformType_DXBC && shaderModelIndex >= 62)
                         cmd << " -enable-16bit-types";
 
-                    if (m_Ctx->options.warningsAreErrors)
+                    if (m_Ctx->options->warningsAreErrors)
                         cmd << " -WX";
 
-                    if (m_Ctx->options.allResourcesBound)
+                    if (m_Ctx->options->allResourcesBound)
                         cmd << " -all_resources_bound";
 
-                    if (m_Ctx->options.matrixRowMajor)
+                    if (m_Ctx->options->matrixRowMajor)
                         cmd << " -Zpr";
 
-                    if (m_Ctx->options.hlsl2021)
+                    if (m_Ctx->options->hlsl2021)
                         cmd << " -HV 2021";
 
-                    if (m_Ctx->options.pdb || m_Ctx->options.embedPdb)
+                    if (m_Ctx->options->pdb || m_Ctx->options->embedPdb)
                         cmd << " -Zi -Zsb"; // only binary affects hash
 
-                    if (m_Ctx->options.embedPdb)
+                    if (m_Ctx->options->embedPdb)
                         cmd << " -Qembed_debug";
 
-                    if (m_Ctx->options.platform == Platform_SPIRV)
+                    if (m_Ctx->options->platformType == PlatformType_SPIRV)
                     {
                         cmd << " -spirv";
 
-                        cmd << " -fspv-target-env=vulkan" << m_Ctx->options.vulkanVersion;
+                        cmd << " -fspv-target-env=vulkan" << m_Ctx->options->vulkanVersion;
 
-                        if (m_Ctx->options.vulkanMemoryLayout)
-                            cmd << " -fvk-use-" << m_Ctx->options.vulkanMemoryLayout << "-layout";
+                        if (!m_Ctx->options->vulkanMemoryLayout.empty())
+                            cmd << " -fvk-use-" << m_Ctx->options->vulkanMemoryLayout << "-layout";
 
-                        for (const std::string &ext : m_Ctx->options.spirvExtensions)
+                        for (const std::string &ext : m_Ctx->options->spirvExtensions)
                             cmd << " -fspv-extension=" << ext;
 
-                        if (!m_Ctx->options.noRegShifts)
+                        if (!m_Ctx->options->noRegShifts)
                         {
                             for (uint32_t space = 0; space < SPIRV_SPACES_NUM; space++)
                             {
-                                cmd << " -fvk-s-shift " << m_Ctx->options.sRegShift << " " << space;
-                                cmd << " -fvk-t-shift " << m_Ctx->options.tRegShift << " " << space;
-                                cmd << " -fvk-b-shift " << m_Ctx->options.bRegShift << " " << space;
-                                cmd << " -fvk-u-shift " << m_Ctx->options.uRegShift << " " << space;
+                                cmd << " -fvk-s-shift " << m_Ctx->options->sRegShift << " " << space;
+                                cmd << " -fvk-t-shift " << m_Ctx->options->tRegShift << " " << space;
+                                cmd << " -fvk-b-shift " << m_Ctx->options->bRegShift << " " << space;
+                                cmd << " -fvk-u-shift " << m_Ctx->options->uRegShift << " " << space;
                             }
                         }
                     }
                     else // Not supported by SPIRV gen
                     {
-                        if (m_Ctx->options.stripReflection)
+                        if (m_Ctx->options->stripReflection)
                             cmd << " -Qstrip_reflect";
 
-                        if (m_Ctx->options.pdb)
+                        if (m_Ctx->options->pdb)
                         {
                             std::filesystem::path pdbPath = std::filesystem::path(outputFile).parent_path() / PDB_DIR;
                             cmd << " -Fd " << Utils::EscapePath(pdbPath.string() + "/"); // only binary code affects hash
@@ -714,19 +713,19 @@ namespace ShaderMake {
                     }
 
                     // Custom options
-                    for (std::string const &opts : m_Ctx->options.compilerOptions)
+                    for (std::string const &opts : m_Ctx->options->compilerOptions)
                         cmd << " " << opts;
                 }
 
                 // Source file
-                std::filesystem::path sourceFile = m_Ctx->options.sourceDir / taskData.source;
-                cmd << " " << Utils::EscapePath(sourceFile.string());
+                std::filesystem::path sourceFile = m_Ctx->options->configFile.parent_path() / taskData.source;
+                cmd << " " << Utils::EscapePath(sourceFile.generic_string());
             }
 
             cmd << " 2>&1";
 
             // Debug output
-            if (m_Ctx->options.verbose)
+            if (m_Ctx->options->verbose)
                 Utils::Printf(WHITE "%s\n", cmd.str().c_str());
 
             // Compiling the shader
@@ -769,7 +768,7 @@ namespace ShaderMake {
                 std::vector<uint8_t> buffer;
                 if (Utils::ReadBinaryFile(outputFile.c_str(), buffer))
                 {
-                    std::string headerFile = taskData.outputFileWithoutExt + m_Ctx->outputExt + ".h";
+                    std::string headerFile = taskData.outputFileWithoutExt + m_Ctx->options->outputExt + ".h";
                     DataOutputContext context(m_Ctx, headerFile.c_str(), true);
                     if (context.stream)
                     {
@@ -779,7 +778,7 @@ namespace ShaderMake {
                         context.WriteTextEpilog();
 
                         // Delete the binary file if it's not requested
-                        if (!m_Ctx->options.binary)
+                        if (!m_Ctx->options->binary)
                             std::filesystem::remove(outputFile);
                     }
                     else
@@ -789,11 +788,13 @@ namespace ShaderMake {
                     }
                 }
                 else
+                {
                     isSucceeded = false;
+                }
             }
 
             // Update progress
-            taskData.UpdateProgress(isSucceeded, willRetry, msg.str().c_str());
+            taskData.UpdateProgress(m_Ctx, isSucceeded, willRetry, msg.str().c_str());
         }
 
 

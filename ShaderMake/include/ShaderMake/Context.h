@@ -73,6 +73,21 @@ using Microsoft::WRL::ComPtr;
 
 namespace ShaderMake {
 
+enum PlatformType : uint8_t
+{
+    PlatformType_DXBC,
+    PlatformType_DXIL,
+    PlatformType_SPIRV,
+    PlatformType_NUM
+};
+
+enum CompilerType : uint8_t
+{
+    CompilerType_DXC,
+    CompilerType_FXC,
+    CompilerType_Slang
+};
+
 namespace Utils {
 static void Printf(const char *format, ...)
 {
@@ -214,32 +229,51 @@ static bool ReadBinaryFile(const char *file, std::vector<uint8_t> &outData)
     fclose(stream);
     return success;
 }
+
+static std::string PlatformToString(PlatformType platform)
+{
+    switch (platform)
+    {
+        case PlatformType_DXIL: return "DXIL";
+        case PlatformType_DXBC: return "DXBC";
+        case PlatformType_SPIRV: return "SPIRV";
+        default: return "";
+    }
 }
 
-static std::array<const char *, 3> PlatformNames = {
-    "DXBC",
-    "DXIL",
-    "SPIRV",
-};
+static std::string PlatformExtension(PlatformType platform)
+{
+    switch (platform)
+    {
+        case PlatformType_DXIL: return ".dxil";
+        case PlatformType_DXBC: return ".dxbc";
+        case PlatformType_SPIRV: return ".spirv";
+        default: return "";
+    }
+}
+static std::string CompilerExecutablePath(CompilerType compilerType)
+{
+    switch (compilerType)
+    {
+#ifdef _WIN32
+        case CompilerType_DXC: return "dxc.exe";
+        case CompilerType_FXC: return "fxc.exe";
+        case CompilerType_Slang: return "slangc.exe";
+#else
+        case CompilerType_DXC: return "dxc";
+        case CompilerType_FXC: return "fxc";
+        case CompilerType_Slang: return "slangc";
+#endif
+        default: return "";
+    }
+}
 
-static std::array<const char *, 3> PlatformExts = {
-    ".dxbc",
-    ".dxil",
-    ".spirv",
-};
+}
 
 static std::array<const char *, 3> PlatformSlangTargets = {
     "dxbc",
     "dxil",
     "spirv",
-};
-
-enum Platform : uint8_t
-{
-    Platform_DXBC,
-    Platform_DXIL,
-    Platform_SPIRV,
-    Platform_NUM
 };
 
 struct BlobEntry
@@ -257,27 +291,28 @@ public:
     std::vector<std::string> spirvExtensions = { "SPV_EXT_descriptor_indexing", "KHR" };
     std::vector<std::string> compilerOptions;
     std::filesystem::path configFile;
-    std::filesystem::path sourceDir;
-    const char *platformName = nullptr;
-    const char *outputDir = nullptr;
-    const char *shaderModel = "6_5";
-    const char *vulkanVersion = "1.3";
-    const char *compiler = nullptr;
-    const char *outputExt = nullptr;
-    const char *vulkanMemoryLayout = nullptr;
+    std::string outputDir;
+    std::string shaderModel = "6_5";
+    std::string vulkanVersion = "1.3";
+    std::filesystem::path compilerPath;
+    std::string outputExt;
+    std::string vulkanMemoryLayout;
     uint32_t sRegShift = 100; // must be first (or change "DxcCompile" code)
     uint32_t tRegShift = 200;
     uint32_t bRegShift = 300;
     uint32_t uRegShift = 400;
     uint32_t optimizationLevel = 3;
-    Platform platform = Platform_DXBC;
+
+    CompilerType compilerType = CompilerType_DXC;
+    PlatformType platformType = PlatformType_DXIL;
+
     bool serial = false;
     bool flatten = false;
     bool force = false;
     bool help = false;
-    bool binary = false;
+    bool binary = true;
     bool header = false;
-    bool binaryBlob = false;
+    bool binaryBlob = true;
     bool headerBlob = false;
     bool continueOnError = false;
     bool warningsAreErrors = false;
@@ -288,14 +323,13 @@ public:
     bool matrixRowMajor = false;
     bool hlsl2021 = false;
     bool verbose = false;
-    bool colorize = false;
+    bool colorize = true;
     bool useAPI = false;
     bool slang = false;
     bool slangHlsl = false;
     bool noRegShifts = false;
     int retryCount = 10; // default 10 retries for compilation task sub-process failures
 
-    bool Parse(int32_t argc, const char **argv);
     inline bool IsBlob() const { return binaryBlob || headerBlob; }
 };
 
@@ -319,7 +353,7 @@ class TaskData;
 class Context
 {
 public:
-    Options options;
+    Options *options = nullptr;
     std::mutex taskMutex;
 
     std::map<std::filesystem::path, std::filesystem::file_time_type> hierarchicalUpdateTimes;
@@ -330,7 +364,6 @@ public:
     std::atomic<uint32_t> failedTaskCount = 0;
     std::atomic<bool> terminate = false;
     uint32_t originalTaskCount;
-    const char *outputExt = nullptr;
 
     std::string GetShaderName(const std::filesystem::path &path);
     void DumpShader(const TaskData &taskData, const uint8_t *data, size_t datSize);
@@ -339,7 +372,12 @@ public:
     bool GetHierarchicalUpdateTime(const std::filesystem::path &file, std::list<std::filesystem::path> &callStack, std::filesystem::file_time_type &outTime);
     bool CreateBlob(const std::string &blobName, const std::vector<BlobEntry> &entries, bool useTextOutput);
     void RemoveIntermediateBlobFiles(const std::vector<BlobEntry> &entries);
-    void SignalHandler(int32_t sig);
+
+    Context() = default;
+    Context(Options *opts);
+
+private:
+    void ProcessOptions();
 };
 
 class DataOutputContext
@@ -373,13 +411,9 @@ public:
     std::string combinedDefines;
     uint32_t optimizationLevel = 3;
 
-    void UpdateProgress(bool isSucceeded, bool willRetry, const char *message);
-
     TaskData() = default;
-    TaskData(Context *ctx);
 
-private:
-    Context *m_Ctx = nullptr;
+    void UpdateProgress(Context *ctx, bool isSucceeded, bool willRetry, const char *message);
 };
 
 }
