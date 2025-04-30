@@ -2,3 +2,5 @@
 _*/
 build*/
 bin/
+.vs
+.vscode
