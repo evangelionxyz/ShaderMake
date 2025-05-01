@@ -1,5 +1,7 @@
 cmake_minimum_required (VERSION 3.15)
 
+set(SHADERMAKE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/ShaderMake)
+
 # Is submodule?
 if (${CMAKE_SOURCE_DIR} STREQUAL ${CMAKE_CURRENT_SOURCE_DIR})
     set (SHADERMAKE_IS_SUBMODULE OFF)
