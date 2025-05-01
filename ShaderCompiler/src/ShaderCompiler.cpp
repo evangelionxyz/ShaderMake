@@ -1,6 +1,5 @@
 #define SHADERMAKE_COLORS
 #include <ShaderMake/ShaderMake.h>
-
 #include <assert.h>
 
 using namespace ShaderMake;
@@ -13,7 +12,6 @@ int main(int argc, char **argv)
     */
 
     // the sift define is default
-
     Options options;
 
     options.compilerType = CompilerType_DXC;
