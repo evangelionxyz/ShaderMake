@@ -28,7 +28,7 @@ int main(int argc, char **argv)
 
     Context ctx(&options);
     SMResult result = ctx.Compile();
-    assert(result == SMResult_Success, "Failed to compile shader");
+    assert(result == SMResult_Success);
 
     return (ctx.terminate || ctx.failedTaskCount > 0) ? 1 : 0;
 }
