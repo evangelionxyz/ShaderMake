@@ -1,15 +1,29 @@
-# ShaderMake C++ Abstraction
+# NVIDIA-RTX ShaderMake C++ Abstraction
 
-The purpose of this library  to compile directly from you apps/engines instead of using ShaderMake.exe to compile.
+The purpose of this library  to compile directly from you apps/engines instead of using ShaderMake.exe
 
 DXIL Command:
 ```
-ShaderMake.exe --platform DXIL --binary -O3 -c "Shader.cfg" -o "bin" --compiler "%VULKAN_SDK%\Bin\dxc.exe"  --tRegShift 0  --sRegShift 128  --bRegShift 256 --uRegShift 384 --useAPI
+ShaderMake.exe
+    --platform DXIL
+    --binary -O3
+    -c "Shader.cfg"
+    -o "bin"
+    --compiler "%VULKAN_SDK%\Bin\dxc.exe" 
+    --tRegShift 0 --sRegShift 128  --bRegShift 256 --uRegShift 384
+    --useAPI
 ```
 
 SPIRV Vulkan:
 ```
-ShaderMake.exe --platform SPIRV --binary -O3 -c "Shader.cfg" -o "bin" --compiler "%VULKAN_SDK%\Bin\dxc.exe"  --tRegShift 0  --sRegShift 128  --bRegShift 256 --uRegShift 384 --useAPI -D SPIRV -D TARGET_VULKAN
+ShaderMake.exe --platform SPIRV --binary -O3
+    -c "Shader.cfg"
+    -o "bin"
+    --compiler "%VULKAN_SDK%\Bin\dxc.exe"
+    --tRegShift 0  --sRegShift 128  --bRegShift 256 --uRegShift 384
+    --useAPI
+    -D SPIRV
+    -D TARGET_VULKAN
 ```
 
 Usage example:
@@ -32,7 +46,7 @@ int main(int argc, char **argv)
     options.configFile = "Shader.cfg";
     options.forceCompile = false; // recompile if the binary already exists
 #if 0
-    options.platformType = PlatformType_DXIL; // gen to nativ .dxil
+    options.platformType = PlatformType_DXIL; // gen to native .dxil
 #else
     options.platformType = PlatformType_SPIRV; // gen to native .spirv
 #endif
@@ -44,8 +58,6 @@ int main(int argc, char **argv)
     return (ctx.terminate || ctx.failedTaskCount > 0) ? 1 : 0;
 }
 ```
-
-# NVIDIA-RTX ShaderMake 
 
 ShaderMake is a frond-end tool for batch multi-threaded shader compilation developed by NVIDIA DevTech. It is compatible with Microsoft FXC and DXC compilers by calling them via API functions or executing them through command line, and with [Slang](https://github.com/shader-slang/slang) through command line only.
 
