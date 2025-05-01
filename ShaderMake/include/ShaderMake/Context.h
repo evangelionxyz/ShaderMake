@@ -229,7 +229,6 @@ static bool ReadBinaryFile(const char *file, std::vector<uint8_t> &outData)
     fclose(stream);
     return success;
 }
-
 static std::string PlatformToString(PlatformType platform)
 {
     switch (platform)
@@ -240,7 +239,6 @@ static std::string PlatformToString(PlatformType platform)
         default: return "";
     }
 }
-
 static std::string PlatformExtension(PlatformType platform)
 {
     switch (platform)
@@ -270,45 +268,52 @@ static std::string CompilerExecutablePath(CompilerType compilerType)
 
 }
 
-static std::array<const char *, 3> PlatformSlangTargets = {
-    "dxbc",
-    "dxil",
-    "spirv",
-};
-
 struct BlobEntry
 {
     std::string permutationFileWithoutExt;
     std::string combinedDefines;
 };
 
+enum SMResult
+{
+    SMResult_Success,
+    SMResult_Error,
+    SMResult_FailedToExpandPermuation,
+};
+
 class Options
 {
 public:
-    std::vector<std::filesystem::path> includeDirs;
-    std::vector<std::filesystem::path> relaxedIncludes;
-    std::vector<std::string> defines;
-    std::vector<std::string> spirvExtensions = { "SPV_EXT_descriptor_indexing", "KHR" };
-    std::vector<std::string> compilerOptions;
-    std::filesystem::path configFile;
-    std::string outputDir;
-    std::string shaderModel = "6_5";
-    std::string vulkanVersion = "1.3";
-    std::filesystem::path compilerPath;
-    std::string outputExt;
-    std::string vulkanMemoryLayout;
-    uint32_t sRegShift = 100; // must be first (or change "DxcCompile" code)
-    uint32_t tRegShift = 200;
-    uint32_t bRegShift = 300;
-    uint32_t uRegShift = 400;
-    uint32_t optimizationLevel = 3;
-
     CompilerType compilerType = CompilerType_DXC;
     PlatformType platformType = PlatformType_DXIL;
 
+    std::filesystem::path configFile;
+    std::filesystem::path compilerPath;
+    std::filesystem::path baseDirectory;
+
+    std::string shaderModel = "6_5";
+    std::string vulkanVersion = "1.3";
+    std::string outputDir;
+    std::string outputExt;
+    std::string vulkanMemoryLayout;
+
+    std::vector<std::filesystem::path> includeDirs;
+    std::vector<std::filesystem::path> relaxedIncludes;
+
+    std::vector<std::string> defines;
+    std::vector<std::string> spirvExtensions = { "SPV_EXT_descriptor_indexing", "KHR" };
+    std::vector<std::string> compilerOptions;
+
+    uint32_t tRegShift = 0; // must be first (or change "DxcCompile" code)
+    uint32_t sRegShift = 128;
+    uint32_t bRegShift = 256;
+    uint32_t uRegShift = 384;
+
+    uint32_t optimizationLevel = 3;
+
     bool serial = false;
     bool flatten = false;
-    bool force = false;
+    bool forceCompile = false;
     bool help = false;
     bool binary = true;
     bool header = false;
@@ -330,7 +335,25 @@ public:
     bool noRegShifts = false;
     int retryCount = 10; // default 10 retries for compilation task sub-process failures
 
-    inline bool IsBlob() const { return binaryBlob || headerBlob; }
+    inline bool IsBlob() const
+    {
+        return binaryBlob || headerBlob;
+    }
+
+    void AddDefine(const std::string &define)
+    {
+        defines.push_back(define);
+    }
+
+    void AddSpirvExtension(const std::string &ext)
+    {
+        spirvExtensions.push_back(ext);
+    }
+
+    void AddCompilerOptions(const std::string &opt)
+    {
+        compilerOptions.push_back(opt);
+    }
 };
 
 struct ConfigLine
@@ -372,6 +395,7 @@ public:
     bool GetHierarchicalUpdateTime(const std::filesystem::path &file, std::list<std::filesystem::path> &callStack, std::filesystem::file_time_type &outTime);
     bool CreateBlob(const std::string &blobName, const std::vector<BlobEntry> &entries, bool useTextOutput);
     void RemoveIntermediateBlobFiles(const std::vector<BlobEntry> &entries);
+    SMResult Compile();
 
     Context() = default;
     Context(Options *opts);

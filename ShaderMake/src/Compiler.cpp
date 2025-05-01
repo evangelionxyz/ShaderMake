@@ -153,7 +153,7 @@ namespace ShaderMake {
                 optimizationLevelRemap[taskData.optimizationLevel];
 
             // Compiling the shader
-            std::filesystem::path sourceFile = m_Ctx->options->configFile.parent_path() / taskData.source;
+            std::filesystem::path sourceFile = m_Ctx->options->baseDirectory / taskData.source;
 
             FxcIncluder fxcIncluder(m_Ctx->options, sourceFile);
             std::string profile = taskData.profile + "_5_0";
@@ -319,7 +319,7 @@ namespace ShaderMake {
             }
 
             // Compiling the shader
-            std::filesystem::path sourceFile = m_Ctx->options->configFile.parent_path() / taskData.source;
+            std::filesystem::path sourceFile = m_Ctx->options->baseDirectory / taskData.source;
             std::wstring wsourceFile = sourceFile.wstring();
 
             ComPtr<IDxcBlob> codeBlob;
@@ -550,7 +550,7 @@ namespace ShaderMake {
                     cmd << " -profile " << taskData.profile << "_" << taskData.shaderModel;
 
                     // Target/platform
-                    cmd << " -target " << PlatformSlangTargets[m_Ctx->options->platformType];
+                    cmd << " -target " << Utils::PlatformToString(m_Ctx->options->platformType);
 
                     // Output
                     cmd << " -o " << Utils::EscapePath(outputFile);
@@ -718,7 +718,7 @@ namespace ShaderMake {
                 }
 
                 // Source file
-                std::filesystem::path sourceFile = m_Ctx->options->configFile.parent_path() / taskData.source;
+                std::filesystem::path sourceFile = m_Ctx->options->baseDirectory / taskData.source;
                 cmd << " " << Utils::EscapePath(sourceFile.generic_string());
             }
 

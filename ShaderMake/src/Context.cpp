@@ -23,6 +23,8 @@ THE SOFTWARE.
 #include "Context.h"
 #include "argparse.h"
 
+#include "Compiler.h"
+
 #include "ShaderBlob.h"
 
 #ifdef _WIN32
@@ -31,6 +33,7 @@ THE SOFTWARE.
 #endif
 #include <list>
 #include <regex>
+#include <cassert>
 
 namespace ShaderMake {
 
@@ -290,7 +293,7 @@ bool Options::Parse(int32_t argc, const char **argv)
         if (ignoreConfigDir)
             sourceDir = std::filesystem::path(cd) / fsSrcDir;
         else
-            sourceDir = configFile.parent_path() / fsSrcDir;
+            sourceDir = baseDirectory / fsSrcDir;
     }
     else
         sourceDir = fsSrcDir;
@@ -302,7 +305,7 @@ bool Options::Parse(int32_t argc, const char **argv)
             if (ignoreConfigDir)
                 path = std::filesystem::path(cd) / path;
             else
-                path = configFile.parent_path() / path;
+                path = baseDirectory / path;
         }
     }
 
@@ -481,13 +484,14 @@ bool Context::ProcessConfigLine(uint32_t lineIndex, const std::string &line, con
     }
 
     // Output directory
-    std::filesystem::path outputDir = options->outputDir;
+    std::filesystem::path outputDir = options->baseDirectory / options->outputDir;
     if (configLine.outputDir)
         outputDir /= configLine.outputDir;
 
     // Create intermediate output directories
-    bool force = options->force;
+    bool force = options->forceCompile;
     std::filesystem::path endPath = outputDir / shaderName.parent_path();
+
     if (options->pdb)
         endPath /= PDB_DIR;
     if (endPath.string() != "" && !std::filesystem::exists(endPath))
@@ -531,7 +535,7 @@ bool Context::ProcessConfigLine(uint32_t lineIndex, const std::string &line, con
     }
 
     {
-        std::filesystem::path outputFile = outputDir / shaderName;
+        std::filesystem::path outputFile = options->baseDirectory / outputDir / shaderName;
 
         outputFile += options->outputExt;
         if (options->binaryBlob)
@@ -564,7 +568,7 @@ bool Context::ProcessConfigLine(uint32_t lineIndex, const std::string &line, con
     {
         std::list<std::filesystem::path> callStack;
         std::filesystem::file_time_type sourceTime;
-        std::filesystem::path sourceFile = options->configFile.parent_path() / configLine.source;
+        std::filesystem::path sourceFile = options->baseDirectory / configLine.source;
         if (!GetHierarchicalUpdateTime(sourceFile, callStack, sourceTime))
             return false;
 
@@ -705,6 +709,169 @@ void Context::RemoveIntermediateBlobFiles(const std::vector<BlobEntry> &entries)
     }
 }
 
+SMResult Context::Compile()
+{
+    // Gather shader permutations
+    std::filesystem::path configFilepath = options->baseDirectory / options->configFile;
+
+    assert(std::filesystem::exists(configFilepath));
+    std::filesystem::file_time_type configTime = std::filesystem::last_write_time(configFilepath);
+
+    std::ifstream configStream(configFilepath);
+
+    std::string line;
+    line.reserve(256);
+
+    std::vector<bool> blocks;
+    blocks.push_back(true);
+
+    for (uint32_t lineIndex = 0; getline(configStream, line); lineIndex++)
+    {
+        Utils::TrimConfigLine(line);
+
+        // Skip an empty or commented line
+        if (line.empty() || line[0] == '\n' || (line[0] == '/' && line[1] == '/'))
+            continue;
+
+        // TODO: preprocessor supports "#ifdef MACRO / #if 1 / #if 0", "#else" and "#endif"
+        size_t pos = line.find("#ifdef");
+        if (pos != std::string::npos)
+        {
+            pos += 6;
+            pos += line.substr(pos).find_first_not_of(' ');
+
+            std::string define = line.substr(pos);
+            bool state = blocks.back() && find(options->defines.begin(), options->defines.end(), define) != options->defines.end();
+
+            blocks.push_back(state);
+        }
+        else if (line.find("#if 1") != std::string::npos)
+            blocks.push_back(blocks.back());
+        else if (line.find("#if 0") != std::string::npos)
+            blocks.push_back(false);
+        else if (line.find("#endif") != std::string::npos)
+        {
+            if (blocks.size() == 1)
+                Utils::Printf(RED "%s(%u,0): ERROR: Unexpected '#endif'!\n", Utils::PathToString(options->configFile).c_str(), lineIndex + 1);
+            else
+                blocks.pop_back();
+        }
+        else if (line.find("#else") != std::string::npos)
+        {
+            if (blocks.size() < 2)
+                Utils::Printf(RED "%s(%u,0): ERROR: Unexpected '#else'!\n", Utils::PathToString(options->configFile).c_str(), lineIndex + 1);
+            else if (blocks[blocks.size() - 2])
+                blocks.back() = !blocks.back();
+        }
+        else if (blocks.back())
+        {
+            if (!ExpandPermutations(lineIndex, line, configTime))
+                return SMResult_FailedToExpandPermuation;
+        }
+    }
+
+    // Process tasks
+    if (!tasks.empty())
+    {
+        Compiler compiler(this);
+
+        Utils::Printf(WHITE "Using compiler: %s\n", options->compilerPath.generic_string().c_str());
+
+        originalTaskCount = (uint32_t)tasks.size();
+        processedTaskCount = 0;
+        failedTaskCount = 0;
+
+        // Retry limit for compilation task sub-process failures that can occur when threading
+        taskRetryCount = options->retryCount;
+
+        compiler.DxcCompile();
+
+#if 0
+        uint32_t threadsNum = std::max(options->serial ? 1u : uint32_t(std::thread::hardware_concurrency()), 1u);
+        std::vector<std::thread> threads(threadsNum);
+        for (uint32_t i = 0; i < threadsNum; i++)
+        {
+            if (!options->useAPI)
+                threads[i] = std::thread([&]()
+            {
+                compiler.ExeCompile();
+            });
+#ifdef WIN32
+            else if (options->platform == Platform_DXBC)
+                threads[i] = std::thread(FxcCompile);
+            else
+                threads[i] = std::thread(DxcCompile);
+#endif
+        }
+
+        for (uint32_t i = 0; i < threadsNum; i++)
+            threads[i].join();
+#endif
+
+        // Dump shader blobs
+        for (const auto &[blobName, blobEntries] : shaderBlobs)
+        {
+            // If a blob would contain one entry with no defines, just skip it:
+            // the individual file's output name is the same as the blob, and we're done here.
+            if (blobEntries.size() == 1 && blobEntries[0].combinedDefines.empty())
+                continue;
+
+            // Validate that the blob doesn't contain any shaders with empty defines.
+            // In such case, that individual shader's output file is the same as the blob output file, which wouldn't work.
+            // We could detect this condition earlier and work around it by renaming the shader output file, if necessary.
+            bool invalidEntry = false;
+            for (const auto &entry : blobEntries)
+            {
+                if (entry.combinedDefines.empty())
+                {
+                    const std::string blobBaseName = std::filesystem::path(blobName).stem().generic_string();
+                    Utils::Printf(RED "ERROR: Cannot create a blob for shader %s where some permutation(s) have no definitions!",
+                        blobBaseName.c_str());
+                    invalidEntry = true;
+                    break;
+                }
+            }
+
+            if (invalidEntry)
+            {
+                if (options->continueOnError)
+                    continue;
+
+                return SMResult_Error;
+            }
+
+            if (options->binaryBlob)
+            {
+                bool result = CreateBlob(blobName, blobEntries, false);
+                if (!result && !options->continueOnError)
+                    return SMResult_Error;
+            }
+
+            if (options->headerBlob)
+            {
+                bool result = CreateBlob(blobName, blobEntries, true);
+                if (!result && !options->continueOnError)
+                    return SMResult_Error;
+            }
+
+            if (!options->binary)
+                RemoveIntermediateBlobFiles(blobEntries);
+        }
+
+        // Report failed tasks
+        if (failedTaskCount)
+            Utils::Printf(YELLOW "WARNING: %u task(s) failed to complete!\n", failedTaskCount.load());
+        else
+            Utils::Printf(WHITE "%d task(s) completed successfully.\n", originalTaskCount);
+    }
+    else
+    {
+        Utils::Printf(WHITE "All %s shaders are up to date.\n", Utils::PlatformToString(options->platformType).c_str());
+    }
+
+    return SMResult_Success;
+}
+
 Context::Context(Options *opts)
     : options(opts)
 {
@@ -724,6 +891,10 @@ void Context::ProcessOptions()
     options->compilerPath = vulkanSDKPath + "/Bin/" + Utils::CompilerExecutablePath(options->compilerType);
     SetDllDirectoryA(options->compilerPath.parent_path().generic_string().c_str());
 #endif
+
+    // force to set the target for VULKAN SPIRV
+    if (options->platformType == PlatformType_SPIRV)
+        options->defines = { "SPIRV", "TARGET_VULKAN" }; // for VULKAN SPIRV
 
     // TODO: auto select by the compilation options
     options->outputExt = Utils::PlatformExtension(options->platformType);
