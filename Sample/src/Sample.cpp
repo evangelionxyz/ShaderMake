@@ -6,8 +6,6 @@
 
 using namespace ShaderMake;
 
-#define COMPILE_DXIL 1
-
 int main(int argc, char **argv)
 {
     Options options;
@@ -15,22 +13,23 @@ int main(int argc, char **argv)
     options.optimizationLevel = 3;
     options.baseDirectory = "resources/shaders/";
     options.outputDir = "bin";
-
-#if COMPILE_DXIL
-    options.platformType = PlatformType_DXIL;
-#else
     options.platformType = PlatformType_SPIRV;
-#endif
 
     Context ctx(&options);
 
     ShaderContextDesc shaderDesc = ShaderContextDesc();
     bool forceRecompile = true;
-    std::shared_ptr<ShaderContext> imguiVertexShader = std::make_shared<ShaderContext>("imgui.vertex.hlsl", ShaderType::Vertex, shaderDesc, forceRecompile);
-    std::shared_ptr<ShaderContext> imguiPixelShader = std::make_shared<ShaderContext>("imgui.pixel.hlsl", ShaderType::Pixel, shaderDesc, forceRecompile);
-    std::shared_ptr<ShaderContext> vertexShader = std::make_shared<ShaderContext>("test.vertex.hlsl", ShaderType::Vertex, shaderDesc, forceRecompile);
-    std::shared_ptr<ShaderContext> pixelShader = std::make_shared<ShaderContext>("test.pixel.hlsl", ShaderType::Pixel, shaderDesc, forceRecompile);
-    CompileStatus status = ctx.CompileOrGetShader({ imguiVertexShader, imguiPixelShader, vertexShader, pixelShader });
+    
+    std::shared_ptr<ShaderContext> shaderA = std::make_shared<ShaderContext>("imgui.vertex.hlsl", ShaderType::Vertex, shaderDesc, forceRecompile);
+    std::shared_ptr<ShaderContext> shaderB = std::make_shared<ShaderContext>("imgui.pixel.hlsl", ShaderType::Pixel, shaderDesc, forceRecompile);
+    std::shared_ptr<ShaderContext> shaderC = std::make_shared<ShaderContext>("test.vertex.hlsl", ShaderType::Vertex, shaderDesc, forceRecompile);
+    std::shared_ptr<ShaderContext> shaderD = std::make_shared<ShaderContext>("test.pixel.hlsl", ShaderType::Pixel, shaderDesc, forceRecompile);
+    std::shared_ptr<ShaderContext> shaderE = std::make_shared<ShaderContext>("default.vertex.hlsl", ShaderType::Vertex, shaderDesc, forceRecompile);
+    std::shared_ptr<ShaderContext> shaderF = std::make_shared<ShaderContext>("default.pixel.hlsl", ShaderType::Pixel, shaderDesc, forceRecompile);
+    std::shared_ptr<ShaderContext> shaderG = std::make_shared<ShaderContext>("default_2d.vertex.hlsl", ShaderType::Vertex, shaderDesc, forceRecompile);
+    std::shared_ptr<ShaderContext> shaderH = std::make_shared<ShaderContext>("default_2d.pixel.hlsl", ShaderType::Pixel, shaderDesc, forceRecompile);
+
+    CompileStatus status = ctx.CompileOrGetShader({ shaderA, shaderB, shaderC, shaderD, shaderE, shaderG, shaderF, shaderH });
 
     // compile with .cfg file
     // TODO: get shader compilation result (blob)
