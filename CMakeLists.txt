@@ -64,6 +64,8 @@ endif ()
 
 add_subdirectory(ShaderMake)
 
+set(SHADERMAKE_BUILD_TEST ON)
+
 if(SHADERMAKE_BUILD_TEST)
-    add_subdirectory(ShaderCompiler)
+    add_subdirectory(Sample)
 endif()

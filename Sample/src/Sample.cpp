@@ -1,6 +1,8 @@
 #define SHADERMAKE_COLORS
 #include <ShaderMake/ShaderMake.h>
+
 #include <assert.h>
+#include <initializer_list>
 
 using namespace ShaderMake;
 
@@ -18,8 +20,6 @@ int main(int argc, char **argv)
     options.optimizationLevel = 3;
     options.baseDirectory = "resources/shaders/";
     options.outputDir = "bin";
-    options.configFile = "Shader.cfg";
-    options.forceCompile = false; // recompile if the binary already exists
 #if 0
     options.platformType = PlatformType_DXIL;
 #else
@@ -27,8 +27,15 @@ int main(int argc, char **argv)
 #endif
 
     Context ctx(&options);
-    SMResult result = ctx.Compile();
-    assert(result == SMResult_Success);
+
+    ShaderContextDesc shaderDesc = ShaderContextDesc();
+    bool forceRecompile = true;
+    std::shared_ptr<ShaderContext> vertexShader = std::make_shared<ShaderContext>("imgui.vertex.hlsl", ShaderType::Vertex, shaderDesc, forceRecompile);
+    std::shared_ptr<ShaderContext> pixelShader = std::make_shared<ShaderContext>("imgui.pixel.hlsl", ShaderType::Pixel, shaderDesc, forceRecompile);
+
+    CompileStatus status = ctx.CompileShader({ vertexShader, pixelShader });
+
+    //ctx.CompileConfigFile("Shader.cfg");
 
     return (ctx.terminate || ctx.failedTaskCount > 0) ? 1 : 0;
 }

@@ -26,9 +26,13 @@ THE SOFTWARE.
 #include <string>
 #include <filesystem>
 
+#include <unordered_map>
+
 #ifdef _WIN32
 #   include <d3dcommon.h>
 #   include <combaseapi.h>
+#   include <wrl/client.h>
+#   include <dxcapi.h>
 #endif
 
 namespace ShaderMake {
@@ -100,15 +104,39 @@ namespace Utils {
     class Context;
     class Options;
 
+    struct ShaderBlob
+    {
+        uint8_t *data;
+        size_t dataSize;
+    };
+
+    enum class CompileStatus
+    {
+        Error,
+        Success,
+    };
+
+    struct DxcInstance
+    {
+        Microsoft::WRL::ComPtr<IDxcCompiler3> compiler;
+        Microsoft::WRL::ComPtr<IDxcUtils> utils;
+    };
+
     class Compiler
     {
     public:
         Compiler(Context *ctxt);
+
         void ExeCompile();
         void FxcCompile();
-        void DxcCompile();
+
+        std::shared_ptr<DxcInstance> DxcCompilerCreate();
+
+        CompileStatus DxcCompile(std::shared_ptr<DxcInstance> &dxcInstance);
 
     private:
+        void DxcCompileTask(std::shared_ptr<DxcInstance> &dxcInstance, TaskData &taskData);
+
         Context *m_Ctx = nullptr;
     };
 

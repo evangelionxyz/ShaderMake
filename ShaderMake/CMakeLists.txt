@@ -8,8 +8,8 @@ add_library(ShaderMake STATIC
     include/ShaderMake/ShaderBlob.h
     include/ShaderMake/Timer.h
     include/ShaderMake/Compiler.h
-    
-    include/ShaderMake/Context.h "include/ShaderMake/ShaderMake.h")
+    include/ShaderMake/Context.h
+    include/ShaderMake/ShaderMake.h)
 
 target_compile_options (ShaderMake PRIVATE ${COMPILE_OPTIONS})
 target_include_directories(ShaderMake PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include/ShaderMake)

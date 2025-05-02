@@ -22,9 +22,6 @@ THE SOFTWARE.
 
 #include "Context.h"
 #include "argparse.h"
-
-#include "Compiler.h"
-
 #include "ShaderBlob.h"
 
 #ifdef _WIN32
@@ -80,7 +77,6 @@ int AddLocalDefine(struct argparse *self, const struct argparse_option *option)
     UNUSED(self);
     return 0;
 }
-
 }
 
 #if 0
@@ -313,6 +309,13 @@ bool Options::Parse(int32_t argc, const char **argv)
 }
 #endif
 
+Context::Context(Options *opts)
+    : options(opts)
+{
+    ProcessOptions();
+}
+
+
 bool Context::GetHierarchicalUpdateTime(const std::filesystem::path &file, std::list<std::filesystem::path> &callStack, std::filesystem::file_time_type &outTime)
 {
     static const std::basic_regex<char> includePattern("\\s*#include\\s+[\"<]([^>\"]+)[>\"].*");
@@ -392,42 +395,44 @@ bool Context::GetHierarchicalUpdateTime(const std::filesystem::path &file, std::
     return true;
 }
 
-std::string Context::GetShaderName(const std::filesystem::path &path)
-{
-    std::string name = path.filename().string();
-    replace(name.begin(), name.end(), '.', '_');
-    name += "_" + std::string(Utils::PlatformExtension(options->platformType));
-
-    return "g_" + name;
-}
-
 void Context::DumpShader(const TaskData &taskData, const uint8_t *data, size_t dataSize)
 {
-    std::string file = taskData.outputFileWithoutExt + options->outputExt;
+    std::string finalOutputFilepath = taskData.finalOutputPathNoExtension.generic_string();
 
     if (options->binary || options->binaryBlob || (options->headerBlob && !taskData.combinedDefines.empty()))
     {
-        DataOutputContext context(this, file.c_str(), false);
+        DataOutputContext context(this, finalOutputFilepath.c_str(), false);
         if (!context.stream)
+        {
             return;
+        }
 
         context.WriteDataAsBinary(data, dataSize);
+        Utils::Printf(WHITE "[ WRITE TO BINARY ] %s: %s \n",
+            Utils::PlatformToString(options->platformType).c_str(),
+            finalOutputFilepath.c_str());
     }
 
     if (options->header || (options->headerBlob && taskData.combinedDefines.empty()))
     {
-        DataOutputContext context(this, (file + ".h").c_str(), true);
+        finalOutputFilepath += ".h"; // .h extension
+        DataOutputContext context(this, finalOutputFilepath.c_str(), true);
         if (!context.stream)
             return;
 
-        std::string shaderName = GetShaderName(taskData.outputFileWithoutExt);
+        std::string shaderName = taskData.filepath.filename().generic_string();
+
         context.WriteTextPreamble(shaderName.c_str(), taskData.combinedDefines);
         context.WriteDataAsText(data, dataSize);
         context.WriteTextEpilog();
+
+        Utils::Printf(WHITE "[ WRITE TO BINARY ] %s: %s \n",
+            Utils::PlatformToString(options->platformType).c_str(),
+            finalOutputFilepath.c_str());
     }
 }
 
-bool Context::ProcessConfigLine(uint32_t lineIndex, const std::string &line, const std::filesystem::file_time_type &configTime)
+bool Context::ProcessConfigLine(uint32_t lineIndex, const std::string &line, const std::filesystem::file_time_type &configTime, const char *configFilepath)
 {
     // Tokenize
     std::string lineCopy = line;
@@ -438,7 +443,7 @@ bool Context::ProcessConfigLine(uint32_t lineIndex, const std::string &line, con
     ConfigLine configLine;
     if (!configLine.Parse((int32_t)tokens.size(), tokens.data(), *options))
     {
-        Utils::Printf(RED "%s(%u,0): ERROR: Can't parse config line!\n", Utils::PathToString(options->configFile).c_str(), lineIndex + 1);
+        Utils::Printf(RED "%s(%u,0): ERROR: Can't parse config line!\n", configFilepath, lineIndex + 1);
         return false;
     }
 
@@ -458,7 +463,9 @@ bool Context::ProcessConfigLine(uint32_t lineIndex, const std::string &line, con
         size_t sortedIndex = definesSortedIndices[i];
         combinedDefines += configLine.defines[sortedIndex];
         if (i != configLine.defines.size() - 1)
+        {
             combinedDefines += " ";
+        }
     }
 
     // Compiled shader name
@@ -476,20 +483,22 @@ bool Context::ProcessConfigLine(uint32_t lineIndex, const std::string &line, con
     if (!configLine.defines.empty())
     {
         uint32_t permutationHash = Utils::HashToUint(std::hash<std::string>()(combinedDefines));
-
         char buf[16];
         snprintf(buf, sizeof(buf), "_%08X", permutationHash);
-
         permutationName += buf;
     }
 
     // Output directory
     std::filesystem::path outputDir = options->baseDirectory / options->outputDir;
     if (configLine.outputDir)
+    {
         outputDir /= configLine.outputDir;
+    }
 
     // Create intermediate output directories
-    bool force = options->forceCompile;
+
+    // TODO: get 
+    bool force = true;
     std::filesystem::path endPath = outputDir / shaderName.parent_path();
 
     if (options->pdb)
@@ -514,9 +523,13 @@ bool Context::ProcessConfigLine(uint32_t lineIndex, const std::string &line, con
             if (!force)
             {
                 if (outputTime == zero)
+                {
                     outputTime = std::filesystem::last_write_time(outputFile);
+                }
                 else
+                {
                     outputTime = min(outputTime, std::filesystem::last_write_time(outputFile));
+                }
             }
         }
 
@@ -527,9 +540,13 @@ bool Context::ProcessConfigLine(uint32_t lineIndex, const std::string &line, con
             if (!force)
             {
                 if (outputTime == zero)
+                {
                     outputTime = std::filesystem::last_write_time(outputFile);
+                }
                 else
+                {
                     outputTime = min(outputTime, std::filesystem::last_write_time(outputFile));
+                }
             }
         }
     }
@@ -544,9 +561,13 @@ bool Context::ProcessConfigLine(uint32_t lineIndex, const std::string &line, con
             if (!force)
             {
                 if (outputTime == zero)
+                {
                     outputTime = std::filesystem::last_write_time(outputFile);
+                }
                 else
+                {
                     outputTime = min(outputTime, std::filesystem::last_write_time(outputFile));
+                }
             }
         }
 
@@ -557,9 +578,13 @@ bool Context::ProcessConfigLine(uint32_t lineIndex, const std::string &line, con
             if (!force)
             {
                 if (outputTime == zero)
+                {
                     outputTime = std::filesystem::last_write_time(outputFile);
+                }
                 else
+                {
                     outputTime = min(outputTime, std::filesystem::last_write_time(outputFile));
+                }
             }
         }
     }
@@ -583,14 +608,18 @@ bool Context::ProcessConfigLine(uint32_t lineIndex, const std::string &line, con
     optimizationLevel = std::min(optimizationLevel, 3u);
 
     TaskData &taskData = tasks.emplace_back();
-    taskData.source = configLine.source;
+    taskData.filepath = configLine.source;
     taskData.entryPoint = configLine.entryPoint;
     taskData.profile = configLine.profile;
     taskData.shaderModel = configLine.shaderModel;
     taskData.combinedDefines = combinedDefines;
-    taskData.outputFileWithoutExt = outputFileWithoutExt;
     taskData.defines = configLine.defines;
     taskData.optimizationLevel = optimizationLevel;
+
+    if (options->verbose)
+    {
+        Utils::Printf(WHITE "Added new task: %s", taskData.filepath.generic_string().c_str());
+    }
 
     // Gather blobs
     if (options->IsBlob())
@@ -607,16 +636,18 @@ bool Context::ProcessConfigLine(uint32_t lineIndex, const std::string &line, con
     return true;
 }
 
-bool Context::ExpandPermutations(uint32_t lineIndex, const std::string &line, const std::filesystem::file_time_type &configTime)
+bool Context::ExpandPermutations(uint32_t lineIndex, const std::string &line, const std::filesystem::file_time_type &configTime, const char *configFilepath)
 {
     size_t opening = line.find('{');
     if (opening == std::string::npos)
-        return ProcessConfigLine(lineIndex, line, configTime);
+    {
+        return ProcessConfigLine(lineIndex, line, configTime, configFilepath);
+    }
 
     size_t closing = line.find('}', opening);
     if (closing == std::string::npos)
     {
-        Utils::Printf(RED "%s(%u,0): ERROR: Missing '}'!\n", Utils::PathToString(options->configFile).c_str(), lineIndex + 1);
+        Utils::Printf(RED "%s(%u,0): ERROR: Missing '}'!\n", configFilepath, lineIndex + 1);
         return false;
     }
 
@@ -625,11 +656,15 @@ bool Context::ExpandPermutations(uint32_t lineIndex, const std::string &line, co
     {
         size_t comma = line.find(',', current);
         if (comma == std::string::npos || comma > closing)
+        {
             comma = closing;
+        }
 
         std::string newConfig = line.substr(0, opening) + line.substr(current, comma - current) + line.substr(closing + 1);
-        if (!ExpandPermutations(lineIndex, newConfig, configTime))
+        if (!ExpandPermutations(lineIndex, newConfig, configTime, configFilepath))
+        {
             return false;
+        }
 
         current = comma + 1;
         if (comma >= closing)
@@ -656,8 +691,7 @@ bool Context::CreateBlob(const std::string &blobName, const std::vector<BlobEntr
 
     if (useTextOutput)
     {
-        std::string name = GetShaderName(blobName);
-        outputContext.WriteTextPreamble(name.c_str(), "");
+        outputContext.WriteTextPreamble(blobName.c_str(), "");
     }
 
     ShaderMake::WriteFileCallback writeFileCallback = useTextOutput
@@ -709,10 +743,56 @@ void Context::RemoveIntermediateBlobFiles(const std::vector<BlobEntry> &entries)
     }
 }
 
-SMResult Context::Compile()
+CompileStatus Context::CompileShader(std::initializer_list<std::shared_ptr<ShaderContext>> shaderContexts)
+{
+    if (shaderContexts.size() < 1)
+        return CompileStatus::Success;
+
+    for (auto &shader : shaderContexts)
+    {
+        std::filesystem::path fullpath = options->baseDirectory / shader->GetFilepath();
+        assert(std::filesystem::exists(fullpath));
+
+        // Compiled shader name
+        std::filesystem::path shaderName = Utils::RemoveLeadingDotDots(shader->GetFilepath());
+        shaderName.replace_extension("");
+
+        // Compiled permutation name
+        std::filesystem::path permutationName = shaderName;
+
+        // Output directory
+        std::filesystem::path outputDir = options->baseDirectory / options->outputDir;
+
+        // Create intermediate output directories
+        bool force = shader->IsForceRecompile();
+        std::filesystem::path endPath = outputDir / shaderName.parent_path();
+
+        if (endPath.string() != "" && !std::filesystem::exists(endPath))
+        {
+            std::filesystem::create_directories(endPath);
+            force = true;
+        }
+
+        // Create Tasks
+        std::string outputFileWithoutExt = Utils::PathToString(outputDir / permutationName);
+        TaskData &taskData = tasks.emplace_back();
+        taskData.filepath = shader->GetFilepath();
+        taskData.profile = ShaderTypeToProfile(shader->GetType());
+        taskData.shaderModel = shader->GetDesc().shaderModel;
+        taskData.defines = shader->GetDesc().defines;
+        taskData.optimizationLevel = std::min(shader->GetDesc().optimizationLevel, 3u);
+        taskData.entryPoint = shader->GetDesc().entryPoint;
+    }
+
+    bool processStatus = ProcessTasks();
+
+    return processStatus ? CompileStatus::Success : CompileStatus::Error;
+}
+
+CompileStatus Context::CompileConfigFile(const std::string &configFilename)
 {
     // Gather shader permutations
-    std::filesystem::path configFilepath = options->baseDirectory / options->configFile;
+    std::filesystem::path configFilepath = options->baseDirectory / configFilename;
 
     assert(std::filesystem::exists(configFilepath));
     std::filesystem::file_time_type configTime = std::filesystem::last_write_time(configFilepath);
@@ -752,29 +832,35 @@ SMResult Context::Compile()
         else if (line.find("#endif") != std::string::npos)
         {
             if (blocks.size() == 1)
-                Utils::Printf(RED "%s(%u,0): ERROR: Unexpected '#endif'!\n", Utils::PathToString(options->configFile).c_str(), lineIndex + 1);
+                Utils::Printf(RED "%s(%u,0): ERROR: Unexpected '#endif'!\n", configFilename.c_str(), lineIndex + 1);
             else
                 blocks.pop_back();
         }
         else if (line.find("#else") != std::string::npos)
         {
             if (blocks.size() < 2)
-                Utils::Printf(RED "%s(%u,0): ERROR: Unexpected '#else'!\n", Utils::PathToString(options->configFile).c_str(), lineIndex + 1);
+                Utils::Printf(RED "%s(%u,0): ERROR: Unexpected '#else'!\n", configFilename.c_str(), lineIndex + 1);
             else if (blocks[blocks.size() - 2])
                 blocks.back() = !blocks.back();
         }
         else if (blocks.back())
         {
-            if (!ExpandPermutations(lineIndex, line, configTime))
-                return SMResult_FailedToExpandPermuation;
+            if (!ExpandPermutations(lineIndex, line, configTime, configFilepath.generic_string().c_str()))
+            {
+                return CompileStatus::Error;
+            }
         }
     }
 
-    // Process tasks
+    bool processStatus = ProcessTasks();
+
+    return processStatus ? CompileStatus::Success : CompileStatus::Error;
+}
+
+bool Context::ProcessTasks()
+{
     if (!tasks.empty())
     {
-        Compiler compiler(this);
-
         Utils::Printf(WHITE "Using compiler: %s\n", options->compilerPath.generic_string().c_str());
 
         originalTaskCount = (uint32_t)tasks.size();
@@ -784,7 +870,18 @@ SMResult Context::Compile()
         // Retry limit for compilation task sub-process failures that can occur when threading
         taskRetryCount = options->retryCount;
 
-        compiler.DxcCompile();
+        // create compiler
+        Compiler compiler(this);
+        std::shared_ptr<DxcInstance> dxcInstance = compiler.DxcCompilerCreate();
+        if (!dxcInstance)
+        {
+            return false;
+        }
+
+        if (compiler.DxcCompile(dxcInstance) != CompileStatus::Success)
+        {
+            return false;
+        }
 
 #if 0
         uint32_t threadsNum = std::max(options->serial ? 1u : uint32_t(std::thread::hardware_concurrency()), 1u);
@@ -835,47 +932,53 @@ SMResult Context::Compile()
             if (invalidEntry)
             {
                 if (options->continueOnError)
+                {
                     continue;
+                }
 
-                return SMResult_Error;
+                return false;
             }
 
             if (options->binaryBlob)
             {
                 bool result = CreateBlob(blobName, blobEntries, false);
                 if (!result && !options->continueOnError)
-                    return SMResult_Error;
+                {
+                    return false;
+                }
             }
 
             if (options->headerBlob)
             {
                 bool result = CreateBlob(blobName, blobEntries, true);
                 if (!result && !options->continueOnError)
-                    return SMResult_Error;
+                {
+                    return result;
+                }
             }
 
             if (!options->binary)
+            {
                 RemoveIntermediateBlobFiles(blobEntries);
+            }
         }
 
         // Report failed tasks
         if (failedTaskCount)
+        {
             Utils::Printf(YELLOW "WARNING: %u task(s) failed to complete!\n", failedTaskCount.load());
+        }
         else
+        {
             Utils::Printf(WHITE "%d task(s) completed successfully.\n", originalTaskCount);
+        }
     }
     else
     {
         Utils::Printf(WHITE "All %s shaders are up to date.\n", Utils::PlatformToString(options->platformType).c_str());
     }
 
-    return SMResult_Success;
-}
-
-Context::Context(Options *opts)
-    : options(opts)
-{
-    ProcessOptions();
+    return true;
 }
 
 void Context::ProcessOptions()
@@ -909,7 +1012,9 @@ DataOutputContext::DataOutputContext(Context *ctx, const char *file, bool textMo
 {
     stream = fopen(file, textMode ? "w" : "wb");
     if (!stream)
+    {
         Utils::Printf(RED "ERROR: Can't open file '%s' for writing!\n", file);
+    }
 }
 
 DataOutputContext::~DataOutputContext()
@@ -1030,6 +1135,8 @@ bool ConfigLine::Parse(int32_t argc, const char **argv, const Options &opts)
 void TaskData::UpdateProgress(Context *ctx, bool isSucceeded, bool willRetry, const char *message)
 {
     const std::string platformName = Utils::PlatformToString(ctx->options->platformType);
+    const std::string outFilepath = filepath.generic_string();
+
     if (isSucceeded)
     {
         float progress = 100.0f * float(++ctx->processedTaskCount) / float(ctx->originalTaskCount);
@@ -1039,7 +1146,7 @@ void TaskData::UpdateProgress(Context *ctx, bool isSucceeded, bool willRetry, co
             Utils::Printf(YELLOW "[%5.1f%%] %s %s {%s} {%s}\n%s",
                 progress,
                 platformName.c_str(),
-                source.c_str(),
+                outFilepath.c_str(),
                 entryPoint.c_str(),
                 combinedDefines.c_str(),
                 message);
@@ -1049,7 +1156,7 @@ void TaskData::UpdateProgress(Context *ctx, bool isSucceeded, bool willRetry, co
             Utils::Printf(GREEN "[%5.1f%%]" GRAY " %s" WHITE " %s" GRAY " {%s}" WHITE " {%s}\n",
                 progress,
                 platformName.c_str(),
-                source.c_str(),
+                outFilepath.c_str(),
                 entryPoint.c_str(),
                 combinedDefines.c_str());
         }
@@ -1060,7 +1167,7 @@ void TaskData::UpdateProgress(Context *ctx, bool isSucceeded, bool willRetry, co
         {
             Utils::Printf(YELLOW "[ RETRY-QUEUED ] %s %s {%s} {%s}\n",
                 platformName.c_str(),
-                source.c_str(),
+                outFilepath.c_str(),
                 entryPoint.c_str(),
                 combinedDefines.c_str());
 
@@ -1073,7 +1180,7 @@ void TaskData::UpdateProgress(Context *ctx, bool isSucceeded, bool willRetry, co
         {
             Utils::Printf(RED "[ FAIL ] %s %s {%s} {%s}\n%s",
                 platformName.c_str(),
-                source.c_str(),
+                outFilepath.c_str(),
                 entryPoint.c_str(),
                 combinedDefines.c_str(),
                 message ? message : "<no message text>!\n");

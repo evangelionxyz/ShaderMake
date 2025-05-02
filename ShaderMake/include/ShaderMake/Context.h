@@ -32,6 +32,8 @@ THE SOFTWARE.
 #include <fstream>
 #include <stdarg.h>
 
+#include "Compiler.h"
+
 #ifdef _WIN32
 #   include <d3dcompiler.h> // FXC
 #   include <dxcapi.h> // DXC
@@ -265,7 +267,6 @@ static std::string CompilerExecutablePath(CompilerType compilerType)
         default: return "";
     }
 }
-
 }
 
 struct BlobEntry
@@ -274,20 +275,12 @@ struct BlobEntry
     std::string combinedDefines;
 };
 
-enum SMResult
-{
-    SMResult_Success,
-    SMResult_Error,
-    SMResult_FailedToExpandPermuation,
-};
-
 class Options
 {
 public:
     CompilerType compilerType = CompilerType_DXC;
     PlatformType platformType = PlatformType_DXIL;
 
-    std::filesystem::path configFile;
     std::filesystem::path compilerPath;
     std::filesystem::path baseDirectory;
 
@@ -313,7 +306,6 @@ public:
 
     bool serial = false;
     bool flatten = false;
-    bool forceCompile = false;
     bool help = false;
     bool binary = true;
     bool header = false;
@@ -356,6 +348,58 @@ public:
     }
 };
 
+enum class ShaderType
+{
+    Vertex,
+    Pixel,
+    Geometry
+};
+
+static const char *ShaderTypeToProfile(ShaderType type)
+{
+    switch (type)
+    {
+        case ShaderMake::ShaderType::Vertex:
+            return "vs";
+        case ShaderMake::ShaderType::Pixel:
+            return "ps";
+        case ShaderMake::ShaderType::Geometry:
+            return "gs";
+        default:
+            return "invalid";
+    }
+}
+
+struct ShaderContextDesc
+{
+    std::string entryPoint = "main";
+    std::string shaderModel = "6_5";
+    std::vector<std::string> defines;
+    uint32_t optimizationLevel = 3;
+};
+
+class ShaderContext
+{
+public:
+    explicit ShaderContext(const std::string &filepath, ShaderType type, const ShaderContextDesc &desc = ShaderContextDesc(), bool forceRecompile = false)
+        : m_Filepath(filepath), m_Type(type), m_Desc(desc), m_ForceCompile(forceRecompile)
+    {
+    }
+
+    const ShaderBlob &GetBlob() const { return m_Blob; }
+    std::string GetFilepath() const { return m_Filepath; }
+    ShaderContextDesc GetDesc() const { return m_Desc; }
+    ShaderType GetType() const { return m_Type; }
+    bool IsForceRecompile() const { return m_ForceCompile; }
+
+private:
+    std::string m_Filepath;
+    ShaderType m_Type;
+    ShaderBlob m_Blob;
+    ShaderContextDesc m_Desc;
+    bool m_ForceCompile;
+};
+
 struct ConfigLine
 {
     std::vector<std::string> defines;
@@ -388,19 +432,23 @@ public:
     std::atomic<bool> terminate = false;
     uint32_t originalTaskCount;
 
-    std::string GetShaderName(const std::filesystem::path &path);
     void DumpShader(const TaskData &taskData, const uint8_t *data, size_t datSize);
-    bool ProcessConfigLine(uint32_t lineIndex, const std::string &line, const std::filesystem::file_time_type &configTime);
-    bool ExpandPermutations(uint32_t lineIndex, const std::string &line, const std::filesystem::file_time_type &configTime);
+    bool ProcessConfigLine(uint32_t lineIndex, const std::string &line, const std::filesystem::file_time_type &configTime, const char *configFilepath);
+    bool ExpandPermutations(uint32_t lineIndex, const std::string &line, const std::filesystem::file_time_type &configTime, const char *configFilepath);
     bool GetHierarchicalUpdateTime(const std::filesystem::path &file, std::list<std::filesystem::path> &callStack, std::filesystem::file_time_type &outTime);
     bool CreateBlob(const std::string &blobName, const std::vector<BlobEntry> &entries, bool useTextOutput);
     void RemoveIntermediateBlobFiles(const std::vector<BlobEntry> &entries);
-    SMResult Compile();
+
+    CompileStatus CompileShader(std::initializer_list<std::shared_ptr<ShaderContext>> shaderContexts);
+
+    CompileStatus CompileConfigFile(const std::string &configFilename);
 
     Context() = default;
     Context(Options *opts);
 
 private:
+    bool ProcessTasks();
+
     void ProcessOptions();
 };
 
@@ -427,13 +475,17 @@ class TaskData
 {
 public:
     std::vector<std::string> defines;
-    std::string source;
+    std::filesystem::path filepath;
     std::string entryPoint;
     std::string profile;
     std::string shaderModel;
-    std::string outputFileWithoutExt;
     std::string combinedDefines;
     uint32_t optimizationLevel = 3;
+
+    // compiling requirements (auto set)
+    const wchar_t *optimizationLevelRemap = nullptr;
+    std::vector<std::wstring> regShifts;
+    std::filesystem::path finalOutputPathNoExtension;
 
     TaskData() = default;
 

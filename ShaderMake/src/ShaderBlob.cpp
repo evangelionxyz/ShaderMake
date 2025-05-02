@@ -181,21 +181,14 @@ std::string FormatShaderNotFoundMessage(const void* blob, size_t blobSize, const
     return ss.str();
 }
 
-bool WriteFileHeader(
-    WriteFileCallback write,
-    void* context)
+bool WriteFileHeader(WriteFileCallback write, void* context)
 {
     return write(g_BlobSignature, g_BlobSignatureSize, context);
 }
 
-bool WritePermutation(
-    WriteFileCallback write,
-    void* context,
-    const std::string& permutationKey,
-    const void* binary,
-    size_t binarySize)
+bool WritePermutation(WriteFileCallback write, void *context, const std::string &permutationKey, const void *binary, size_t binarySize)
 {
-    ShaderBlobEntry binaryEntry{};
+    ShaderBlobEntry binaryEntry {};
     binaryEntry.permutationSize = (uint32_t)permutationKey.size();
     binaryEntry.dataSize = (uint32_t)binarySize;
 
@@ -218,7 +211,10 @@ std::vector<size_t> GetSortedConstantsIndices(const std::vector<std::string>& co
     // to avoid unnecessary index re-orderings
     // when constants contains elements of equal values 
     std::stable_sort(sortedDefinesIndices.begin(), sortedDefinesIndices.end(),
-        [&constants](size_t i1, size_t i2) { return constants[i1] < constants[i2]; });
+        [&constants](size_t i1, size_t i2) 
+    { 
+        return constants[i1] < constants[i2];
+    });
 
     return sortedDefinesIndices;
 }

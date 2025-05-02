@@ -111,7 +111,6 @@ namespace ShaderMake {
     Compiler::Compiler(Context *ctx)
         : m_Ctx(ctx)
     {
-
     }
 
     void Compiler::FxcCompile()
@@ -153,7 +152,7 @@ namespace ShaderMake {
                 optimizationLevelRemap[taskData.optimizationLevel];
 
             // Compiling the shader
-            std::filesystem::path sourceFile = m_Ctx->options->baseDirectory / taskData.source;
+            std::filesystem::path sourceFile = m_Ctx->options->baseDirectory / taskData.filepath;
 
             FxcIncluder fxcIncluder(m_Ctx->options, sourceFile);
             std::string profile = taskData.profile + "_5_0";
@@ -199,7 +198,7 @@ namespace ShaderMake {
                 auto pDebugNameData = (const ShaderDebugName *)(pdbName->GetBufferPointer());
                 auto pName = (const char *)(pDebugNameData + 1);
 
-                std::string file = std::filesystem::path(taskData.outputFileWithoutExt).parent_path().string() + "/" + PDB_DIR + "/" + pName;
+                std::string file = taskData.filepath.parent_path().generic_string() + "/" + PDB_DIR + "/" + pName;
                 FILE *fp = fopen(file.c_str(), "wb");
                 if (fp)
                 {
@@ -231,48 +230,12 @@ namespace ShaderMake {
         }
     }
 
-    void Compiler::DxcCompile()
+    std::shared_ptr<DxcInstance> Compiler::DxcCompilerCreate()
     {
-        static const wchar_t *optimizationLevelRemap[] = {
-            // Note: if you're getting errors like "error C2065: 'DXC_ARG_SKIP_OPTIMIZATIONS': undeclared identifier" here,
-            // please update the Windows SDK to at least version 10.0.20348.0.
-            DXC_ARG_SKIP_OPTIMIZATIONS,
-            DXC_ARG_OPTIMIZATION_LEVEL1,
-            DXC_ARG_OPTIMIZATION_LEVEL2,
-            DXC_ARG_OPTIMIZATION_LEVEL3,
-        };
-
-        // Gather SPIRV register shifts once
-        static const wchar_t *regShiftArgs[] = {
-            L"-fvk-s-shift",
-            L"-fvk-t-shift",
-            L"-fvk-b-shift",
-            L"-fvk-u-shift",
-        };
-
-        std::vector<std::wstring> regShifts;
-        if (!m_Ctx->options->noRegShifts)
-        {
-            for (uint32_t reg = 0; reg < 4; reg++)
-            {
-                for (uint32_t space = 0; space < SPIRV_SPACES_NUM; space++)
-                {
-                    wchar_t buf[64];
-
-                    regShifts.push_back(regShiftArgs[reg]);
-
-                    swprintf(buf, COUNT_OF(buf), L"%u", (&m_Ctx->options->sRegShift)[reg]);
-                    regShifts.push_back(std::wstring(buf));
-
-                    swprintf(buf, COUNT_OF(buf), L"%u", space);
-                    regShifts.push_back(std::wstring(buf));
-                }
-            }
-        }
+        std::shared_ptr<DxcInstance> dxcInstance = std::make_shared<DxcInstance>();
 
         // TODO: is a global instance thread safe?
-        ComPtr<IDxcCompiler3> dxcCompiler;
-        HRESULT hr = DxcCreateInstance(CLSID_DxcCompiler, IID_PPV_ARGS(&dxcCompiler));
+        HRESULT hr = DxcCreateInstance(CLSID_DxcCompiler, IID_PPV_ARGS(&dxcInstance->compiler));
         if (FAILED(hr))
         {
             // Print a message explaining that we cannot compile anything.
@@ -284,12 +247,12 @@ namespace ShaderMake {
                 Utils::Printf(RED "ERROR: Cannot create an instance of IDxcCompiler3, HRESULT = 0x%08x (%s)\n", hr, std::system_category().message(hr).c_str());
                 once = false;
             }
+
             m_Ctx->terminate = true;
-            return;
+            return nullptr;
         }
 
-        ComPtr<IDxcUtils> dxcUtils;
-        hr = DxcCreateInstance(CLSID_DxcUtils, IID_PPV_ARGS(&dxcUtils));
+        hr = DxcCreateInstance(CLSID_DxcUtils, IID_PPV_ARGS(&dxcInstance->utils));
         if (FAILED(hr))
         {
             // Also print an error message.
@@ -302,197 +265,263 @@ namespace ShaderMake {
                 once = false;
             }
             m_Ctx->terminate = true;
-            return;
+            return nullptr;
+        }
+
+        return dxcInstance;
+    }
+
+    CompileStatus Compiler::DxcCompile(std::shared_ptr<DxcInstance> &dxcInstance)
+    {
+
+        static const wchar_t *dxcOptimizationLevelRemap[] = {
+            // Note: if you're getting errors like "error C2065: 'DXC_ARG_SKIP_OPTIMIZATIONS': undeclared identifier" here,
+            // please update the Windows SDK to at least version 10.0.20348.0.
+            DXC_ARG_SKIP_OPTIMIZATIONS,
+            DXC_ARG_OPTIMIZATION_LEVEL1,
+            DXC_ARG_OPTIMIZATION_LEVEL2,
+            DXC_ARG_OPTIMIZATION_LEVEL3,
+        };
+
+        // Gather SPIRV register shifts once
+        static const wchar_t *dxcRegShiftArgs[] = {
+            L"-fvk-s-shift",
+            L"-fvk-t-shift",
+            L"-fvk-b-shift",
+            L"-fvk-u-shift",
+        };
+
+        std::vector<std::wstring> regShifts;
+
+        if (m_Ctx->options->noRegShifts == false)
+        {
+            for (uint32_t reg = 0; reg < 4; reg++)
+            {
+                for (uint32_t space = 0; space < SPIRV_SPACES_NUM; space++)
+                {
+                    wchar_t buf[64];
+
+                    regShifts.push_back(dxcRegShiftArgs[reg]);
+
+                    swprintf(buf, COUNT_OF(buf), L"%u", (&m_Ctx->options->sRegShift)[reg]);
+                    regShifts.push_back(std::wstring(buf));
+
+                    swprintf(buf, COUNT_OF(buf), L"%u", space);
+                    regShifts.push_back(std::wstring(buf));
+                }
+            }
         }
 
         while (!m_Ctx->terminate)
         {
             // Getting a task in the current thread
             TaskData taskData;
+
             {
                 std::lock_guard<std::mutex> guard(m_Ctx->taskMutex);
                 if (m_Ctx->tasks.empty())
-                    return;
+                {
+                    return CompileStatus::Success;
+                }
 
                 taskData = m_Ctx->tasks.back();
+                taskData.optimizationLevelRemap = dxcOptimizationLevelRemap[taskData.optimizationLevel];
+                taskData.regShifts = regShifts;
+
                 m_Ctx->tasks.pop_back();
             }
 
+            DxcCompileTask(dxcInstance, taskData);
+        }
+
+        return CompileStatus::Success;
+    }
+
+    void Compiler::DxcCompileTask(std::shared_ptr<DxcInstance> &dxcInstance, TaskData &taskData)
+    {
+        // Compiling the shader
+        std::filesystem::path sourceFile = m_Ctx->options->baseDirectory / taskData.filepath;
+        std::wstring wsourceFile = sourceFile.wstring();
+
+        ComPtr<IDxcBlob> codeBlob;
+        ComPtr<IDxcBlobEncoding> errorBlob;
+        bool isSucceeded = false;
+
+        ComPtr<IDxcBlobEncoding> sourceBlob;
+        HRESULT hr = dxcInstance->utils->LoadFile(wsourceFile.c_str(), nullptr, &sourceBlob);
+
+        if (SUCCEEDED(hr))
+        {
+            std::vector<std::wstring> args;
+            args.reserve(16 + (m_Ctx->options->defines.size()
+                + taskData.defines.size()
+                + m_Ctx->options->includeDirs.size()) * 2
+                + (m_Ctx->options->platformType == PlatformType_SPIRV ? taskData.regShifts.size()
+                + m_Ctx->options->spirvExtensions.size() : 0));
+
+            // Source file
+            args.push_back(wsourceFile);
+
+            // Profile
+            args.push_back(L"-T");
+            args.push_back(Utils::AnsiToWide(taskData.profile + "_" + taskData.shaderModel));
+
+            // Entry point
+            args.push_back(L"-E");
+            args.push_back(Utils::AnsiToWide(taskData.entryPoint));
+
+            // Defines
+            for (const std::string &define : m_Ctx->options->defines)
+            {
+                args.push_back(L"-D");
+                args.push_back(Utils::AnsiToWide(define));
+            }
+
+            for (const std::string &define : taskData.defines)
+            {
+                args.push_back(L"-D");
+                args.push_back(Utils::AnsiToWide(define));
+            }
+
+            // Include directories
+            for (const std::filesystem::path &path : m_Ctx->options->includeDirs)
+            {
+                args.push_back(L"-I");
+                args.push_back(path.wstring());
+            }
+
+            // Args
+            args.push_back(taskData.optimizationLevelRemap);
+
+            uint32_t shaderModelIndex = (taskData.shaderModel[0] - '0') * 10 + (taskData.shaderModel[2] - '0');
+            if (shaderModelIndex >= 62)
+                args.push_back(L"-enable-16bit-types");
+
+            if (m_Ctx->options->warningsAreErrors)
+                args.push_back(DXC_ARG_WARNINGS_ARE_ERRORS);
+
+            if (m_Ctx->options->allResourcesBound)
+                args.push_back(DXC_ARG_ALL_RESOURCES_BOUND);
+
+            if (m_Ctx->options->matrixRowMajor)
+                args.push_back(DXC_ARG_PACK_MATRIX_ROW_MAJOR);
+
+            if (m_Ctx->options->hlsl2021)
+            {
+                args.push_back(L"-HV");
+                args.push_back(L"2021");
+            }
+
+            if (m_Ctx->options->pdb || m_Ctx->options->embedPdb)
+            {
+                // TODO: for SPIRV PDB can only be embedded, GetOutput(DXC_OUT_PDB) silently fails...
+                args.push_back(L"-Zi");
+                args.push_back(L"-Zsb"); // only binary code affects hash
+            }
+
+            if (m_Ctx->options->embedPdb)
+                args.push_back(L"-Qembed_debug");
+
+            if (m_Ctx->options->platformType == PlatformType_SPIRV)
+            {
+                args.push_back(L"-spirv");
+                args.push_back(std::wstring(L"-fspv-target-env=vulkan") + Utils::AnsiToWide(m_Ctx->options->vulkanVersion));
+
+                if (!m_Ctx->options->vulkanMemoryLayout.empty())
+                    args.push_back(std::wstring(L"-fvk-use-") + Utils::AnsiToWide(m_Ctx->options->vulkanMemoryLayout) + std::wstring(L"-layout"));
+
+                for (const std::string &ext : m_Ctx->options->spirvExtensions)
+                    args.push_back(std::wstring(L"-fspv-extension=") + Utils::AnsiToWide(ext));
+
+                for (const std::wstring &arg : taskData.regShifts)
+                    args.push_back(arg);
+            }
+            else // Not supported by SPIRV gen
+            {
+                if (m_Ctx->options->stripReflection)
+                    args.push_back(L"-Qstrip_reflect");
+            }
+
+            for (std::string const &opts : m_Ctx->options->compilerOptions)
+            {
+                Utils::TokenizeCompilerOptions(opts.c_str(), args);
+            }
+
+            // Debug output
+            if (m_Ctx->options->verbose)
+            {
+                std::wstringstream cmd;
+                for (const std::wstring &arg : args)
+                {
+                    cmd << arg;
+                    cmd << L" ";
+                }
+
+                Utils::Printf(WHITE "%ls\n", cmd.str().c_str());
+            }
+
+            // Now that args are finalized, get their C-string pointers into a vector
+            std::vector<const wchar_t *> argPointers;
+            argPointers.reserve(args.size());
+            for (const std::wstring &arg : args)
+                argPointers.push_back(arg.c_str());
+
             // Compiling the shader
-            std::filesystem::path sourceFile = m_Ctx->options->baseDirectory / taskData.source;
-            std::wstring wsourceFile = sourceFile.wstring();
+            DxcBuffer sourceBuffer = {};
+            sourceBuffer.Ptr = sourceBlob->GetBufferPointer();
+            sourceBuffer.Size = sourceBlob->GetBufferSize();
 
-            ComPtr<IDxcBlob> codeBlob;
-            ComPtr<IDxcBlobEncoding> errorBlob;
-            bool isSucceeded = false;
+            ComPtr<IDxcIncludeHandler> pDefaultIncludeHandler;
+            dxcInstance->utils->CreateDefaultIncludeHandler(&pDefaultIncludeHandler);
 
-            ComPtr<IDxcBlobEncoding> sourceBlob;
-            hr = dxcUtils->LoadFile(wsourceFile.c_str(), nullptr, &sourceBlob);
+            ComPtr<IDxcResult> dxcResult;
+            hr = dxcInstance->compiler->Compile(&sourceBuffer, argPointers.data(), (uint32_t)args.size(), pDefaultIncludeHandler.Get(), IID_PPV_ARGS(&dxcResult));
 
             if (SUCCEEDED(hr))
+                dxcResult->GetStatus(&hr);
+
+            if (dxcResult)
             {
-                std::vector<std::wstring> args;
-                args.reserve(16 + (m_Ctx->options->defines.size() + taskData.defines.size() + m_Ctx->options->includeDirs.size()) * 2
-                    + (m_Ctx->options->platformType == PlatformType_SPIRV ? regShifts.size() + m_Ctx->options->spirvExtensions.size() : 0));
+                dxcResult->GetOutput(DXC_OUT_OBJECT, IID_PPV_ARGS(&codeBlob), nullptr);
+                dxcResult->GetErrorBuffer(&errorBlob);
+            }
 
-                // Source file
-                args.push_back(wsourceFile);
+            isSucceeded = SUCCEEDED(hr) && codeBlob;
 
-                // Profile
-                args.push_back(L"-T");
-                args.push_back(Utils::AnsiToWide(taskData.profile + "_" + taskData.shaderModel));
-
-                // Entry point
-                args.push_back(L"-E");
-                args.push_back(Utils::AnsiToWide(taskData.entryPoint));
-
-                // Defines
-                for (const std::string &define : m_Ctx->options->defines)
+            // Dump PDB
+            if (isSucceeded && m_Ctx->options->pdb)
+            {
+                ComPtr<IDxcBlob> pdb;
+                ComPtr<IDxcBlobUtf16> pdbName;
+                if (SUCCEEDED(dxcResult->GetOutput(DXC_OUT_PDB, IID_PPV_ARGS(&pdb), &pdbName)))
                 {
-                    args.push_back(L"-D");
-                    args.push_back(Utils::AnsiToWide(define));
-                }
-                for (const std::string &define : taskData.defines)
-                {
-                    args.push_back(L"-D");
-                    args.push_back(Utils::AnsiToWide(define));
-                }
-
-                // Include directories
-                for (const std::filesystem::path &path : m_Ctx->options->includeDirs)
-                {
-                    args.push_back(L"-I");
-                    args.push_back(path.wstring());
-                }
-
-                // Args
-                args.push_back(optimizationLevelRemap[taskData.optimizationLevel]);
-
-                uint32_t shaderModelIndex = (taskData.shaderModel[0] - '0') * 10 + (taskData.shaderModel[2] - '0');
-                if (shaderModelIndex >= 62)
-                    args.push_back(L"-enable-16bit-types");
-
-                if (m_Ctx->options->warningsAreErrors)
-                    args.push_back(DXC_ARG_WARNINGS_ARE_ERRORS);
-
-                if (m_Ctx->options->allResourcesBound)
-                    args.push_back(DXC_ARG_ALL_RESOURCES_BOUND);
-
-                if (m_Ctx->options->matrixRowMajor)
-                    args.push_back(DXC_ARG_PACK_MATRIX_ROW_MAJOR);
-
-                if (m_Ctx->options->hlsl2021)
-                {
-                    args.push_back(L"-HV");
-                    args.push_back(L"2021");
-                }
-
-                if (m_Ctx->options->pdb || m_Ctx->options->embedPdb)
-                {
-                    // TODO: for SPIRV PDB can only be embedded, GetOutput(DXC_OUT_PDB) silently fails...
-                    args.push_back(L"-Zi");
-                    args.push_back(L"-Zsb"); // only binary code affects hash
-                }
-
-                if (m_Ctx->options->embedPdb)
-                    args.push_back(L"-Qembed_debug");
-
-                if (m_Ctx->options->platformType == PlatformType_SPIRV)
-                {
-                    args.push_back(L"-spirv");
-                    args.push_back(std::wstring(L"-fspv-target-env=vulkan") + Utils::AnsiToWide(m_Ctx->options->vulkanVersion));
-
-                    if (!m_Ctx->options->vulkanMemoryLayout.empty())
-                        args.push_back(std::wstring(L"-fvk-use-") + Utils::AnsiToWide(m_Ctx->options->vulkanMemoryLayout) + std::wstring(L"-layout"));
-
-                    for (const std::string &ext : m_Ctx->options->spirvExtensions)
-                        args.push_back(std::wstring(L"-fspv-extension=") + Utils::AnsiToWide(ext));
-
-                    for (const std::wstring &arg : regShifts)
-                        args.push_back(arg);
-                }
-                else // Not supported by SPIRV gen
-                {
-                    if (m_Ctx->options->stripReflection)
-                        args.push_back(L"-Qstrip_reflect");
-                }
-
-                for (std::string const &opts : m_Ctx->options->compilerOptions)
-                {
-                    Utils::TokenizeCompilerOptions(opts.c_str(), args);
-                }
-
-                // Debug output
-                if (m_Ctx->options->verbose)
-                {
-                    std::wstringstream cmd;
-                    for (const std::wstring &arg : args)
+                    std::wstring file = taskData.filepath.parent_path().wstring() + L"/" + _L(PDB_DIR) + L"/" + std::wstring(pdbName->GetStringPointer());
+                    FILE *fp = _wfopen(file.c_str(), L"wb");
+                    if (fp)
                     {
-                        cmd << arg;
-                        cmd << L" ";
-                    }
-
-                    Utils::Printf(WHITE "%ls\n", cmd.str().c_str());
-                }
-
-                // Now that args are finalized, get their C-string pointers into a vector
-                std::vector<const wchar_t *> argPointers;
-                argPointers.reserve(args.size());
-                for (const std::wstring &arg : args)
-                    argPointers.push_back(arg.c_str());
-
-                // Compiling the shader
-                DxcBuffer sourceBuffer = {};
-                sourceBuffer.Ptr = sourceBlob->GetBufferPointer();
-                sourceBuffer.Size = sourceBlob->GetBufferSize();
-
-                ComPtr<IDxcIncludeHandler> pDefaultIncludeHandler;
-                dxcUtils->CreateDefaultIncludeHandler(&pDefaultIncludeHandler);
-
-                ComPtr<IDxcResult> dxcResult;
-                hr = dxcCompiler->Compile(&sourceBuffer, argPointers.data(), (uint32_t)args.size(), pDefaultIncludeHandler.Get(), IID_PPV_ARGS(&dxcResult));
-
-                if (SUCCEEDED(hr))
-                    dxcResult->GetStatus(&hr);
-
-                if (dxcResult)
-                {
-                    dxcResult->GetResult(&codeBlob);
-                    dxcResult->GetErrorBuffer(&errorBlob);
-                }
-
-                isSucceeded = SUCCEEDED(hr) && codeBlob;
-
-                // Dump PDB
-                if (isSucceeded && m_Ctx->options->pdb)
-                {
-                    ComPtr<IDxcBlob> pdb;
-                    ComPtr<IDxcBlobUtf16> pdbName;
-                    if (SUCCEEDED(dxcResult->GetOutput(DXC_OUT_PDB, IID_PPV_ARGS(&pdb), &pdbName)))
-                    {
-                        std::wstring file = std::filesystem::path(taskData.outputFileWithoutExt).parent_path().wstring() + L"/" + _L(PDB_DIR) + L"/" + std::wstring(pdbName->GetStringPointer());
-                        FILE *fp = _wfopen(file.c_str(), L"wb");
-                        if (fp)
-                        {
-                            fwrite(pdb->GetBufferPointer(), pdb->GetBufferSize(), 1, fp);
-                            fclose(fp);
-                        }
+                        fwrite(pdb->GetBufferPointer(), pdb->GetBufferSize(), 1, fp);
+                        fclose(fp);
                     }
                 }
             }
-
-            if (m_Ctx->terminate)
-                break;
-
-            // Dump output
-            if (isSucceeded)
-            {
-                m_Ctx->DumpShader(taskData, (uint8_t *)codeBlob->GetBufferPointer(), codeBlob->GetBufferSize());
-            }
-
-            // Update progress
-            taskData.UpdateProgress(m_Ctx, isSucceeded, false, errorBlob ? (char *)errorBlob->GetBufferPointer() : nullptr);
         }
+
+        if (m_Ctx->terminate)
+        {
+            return;
+        }
+
+        // Dump output
+        if (isSucceeded)
+        {
+            std::filesystem::path filenameWithoutTargetExtension = (m_Ctx->options->baseDirectory / m_Ctx->options->outputDir / taskData.filepath.filename());
+            taskData.finalOutputPathNoExtension = filenameWithoutTargetExtension.replace_extension(m_Ctx->options->outputExt);
+
+            m_Ctx->DumpShader(taskData, (uint8_t *)codeBlob->GetBufferPointer(), codeBlob->GetBufferSize());
+        }
+
+        // Update progress
+        taskData.UpdateProgress(m_Ctx, isSucceeded, false, errorBlob ? (char *)errorBlob->GetBufferPointer() : nullptr);
     }
 
     void Compiler::ExeCompile()
@@ -519,7 +548,7 @@ namespace ShaderMake {
             }
 
             bool convertBinaryOutputToHeader = false;
-            std::string outputFile = taskData.outputFileWithoutExt + m_Ctx->options->outputExt;
+            std::string outputFile = taskData.filepath.parent_path().generic_string() + m_Ctx->options->outputExt;
 
             // Building command line
             std::ostringstream cmd;
@@ -624,10 +653,8 @@ namespace ShaderMake {
                         cmd << " -Fo " << Utils::EscapePath(outputFile);
                     if (m_Ctx->options->header || (m_Ctx->options->headerBlob && taskData.combinedDefines.empty()))
                     {
-                        std::string name = m_Ctx->GetShaderName(taskData.outputFileWithoutExt);
-
                         cmd << " -Fh " << Utils::EscapePath(outputFile) << ".h";
-                        cmd << " -Vn " << name;
+                        cmd << " -Vn " << taskData.filepath.filename().generic_string();
                     }
 
                     // Profile
@@ -718,7 +745,7 @@ namespace ShaderMake {
                 }
 
                 // Source file
-                std::filesystem::path sourceFile = m_Ctx->options->baseDirectory / taskData.source;
+                std::filesystem::path sourceFile = m_Ctx->options->baseDirectory / taskData.filepath;
                 cmd << " " << Utils::EscapePath(sourceFile.generic_string());
             }
 
@@ -768,11 +795,11 @@ namespace ShaderMake {
                 std::vector<uint8_t> buffer;
                 if (Utils::ReadBinaryFile(outputFile.c_str(), buffer))
                 {
-                    std::string headerFile = taskData.outputFileWithoutExt + m_Ctx->options->outputExt + ".h";
+                    std::string headerFile = taskData.filepath.filename().generic_string() + m_Ctx->options->outputExt + ".h";
                     DataOutputContext context(m_Ctx, headerFile.c_str(), true);
                     if (context.stream)
                     {
-                        std::string shaderName = m_Ctx->GetShaderName(taskData.outputFileWithoutExt);
+                        std::string shaderName = taskData.filepath.filename().generic_string();
                         context.WriteTextPreamble(shaderName.c_str(), taskData.combinedDefines);
                         context.WriteDataAsText(buffer.data(), buffer.size());
                         context.WriteTextEpilog();
@@ -796,9 +823,5 @@ namespace ShaderMake {
             // Update progress
             taskData.UpdateProgress(m_Ctx, isSucceeded, willRetry, msg.str().c_str());
         }
-
-
     }
-
-
 }
