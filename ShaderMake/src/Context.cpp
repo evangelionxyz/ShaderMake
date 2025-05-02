@@ -743,7 +743,7 @@ void Context::RemoveIntermediateBlobFiles(const std::vector<BlobEntry> &entries)
     }
 }
 
-CompileStatus Context::CompileShader(std::initializer_list<std::shared_ptr<ShaderContext>> shaderContexts)
+CompileStatus Context::CompileOrGetShader(std::initializer_list<std::shared_ptr<ShaderContext>> shaderContexts)
 {
     if (shaderContexts.size() < 1)
         return CompileStatus::Success;
@@ -754,7 +754,7 @@ CompileStatus Context::CompileShader(std::initializer_list<std::shared_ptr<Shade
         assert(std::filesystem::exists(fullpath));
 
         // Compiled shader name
-        std::filesystem::path shaderName = Utils::RemoveLeadingDotDots(shader->GetFilepath());
+        std::filesystem::path shaderName = fullpath.filename();
         shaderName.replace_extension("");
 
         // Compiled permutation name
@@ -765,9 +765,9 @@ CompileStatus Context::CompileShader(std::initializer_list<std::shared_ptr<Shade
 
         // Create intermediate output directories
         bool force = shader->IsForceRecompile();
-        std::filesystem::path endPath = outputDir / shaderName.parent_path();
 
-        if (endPath.string() != "" && !std::filesystem::exists(endPath))
+        std::filesystem::path endPath = outputDir / shaderName.parent_path();
+        if (!endPath.string().empty() && !std::filesystem::exists(endPath))
         {
             std::filesystem::create_directories(endPath);
             force = true;
@@ -782,6 +782,8 @@ CompileStatus Context::CompileShader(std::initializer_list<std::shared_ptr<Shade
         taskData.defines = shader->GetDesc().defines;
         taskData.optimizationLevel = std::min(shader->GetDesc().optimizationLevel, 3u);
         taskData.entryPoint = shader->GetDesc().entryPoint;
+
+        taskData.blob = &shader->blob; // for compile result
     }
 
     bool processStatus = ProcessTasks();

@@ -386,18 +386,18 @@ public:
     {
     }
 
-    const ShaderBlob &GetBlob() const { return m_Blob; }
     std::string GetFilepath() const { return m_Filepath; }
     ShaderContextDesc GetDesc() const { return m_Desc; }
     ShaderType GetType() const { return m_Type; }
     bool IsForceRecompile() const { return m_ForceCompile; }
 
+    ShaderBlob blob;
+
 private:
     std::string m_Filepath;
     ShaderType m_Type;
-    ShaderBlob m_Blob;
-    ShaderContextDesc m_Desc;
     bool m_ForceCompile;
+    ShaderContextDesc m_Desc;
 };
 
 struct ConfigLine
@@ -439,7 +439,7 @@ public:
     bool CreateBlob(const std::string &blobName, const std::vector<BlobEntry> &entries, bool useTextOutput);
     void RemoveIntermediateBlobFiles(const std::vector<BlobEntry> &entries);
 
-    CompileStatus CompileShader(std::initializer_list<std::shared_ptr<ShaderContext>> shaderContexts);
+    CompileStatus CompileOrGetShader(std::initializer_list<std::shared_ptr<ShaderContext>> shaderContexts);
 
     CompileStatus CompileConfigFile(const std::string &configFilename);
 
@@ -474,6 +474,11 @@ private:
 class TaskData
 {
 public:
+    TaskData() = default;
+    void UpdateProgress(Context *ctx, bool isSucceeded, bool willRetry, const char *message);
+
+    ShaderBlob *blob = nullptr;
+
     std::vector<std::string> defines;
     std::filesystem::path filepath;
     std::string entryPoint;
@@ -486,10 +491,6 @@ public:
     const wchar_t *optimizationLevelRemap = nullptr;
     std::vector<std::wstring> regShifts;
     std::filesystem::path finalOutputPathNoExtension;
-
-    TaskData() = default;
-
-    void UpdateProgress(Context *ctx, bool isSucceeded, bool willRetry, const char *message);
 };
 
 }

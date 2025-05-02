@@ -285,8 +285,8 @@ namespace ShaderMake {
 
         // Gather SPIRV register shifts once
         static const wchar_t *dxcRegShiftArgs[] = {
-            L"-fvk-s-shift",
             L"-fvk-t-shift",
+            L"-fvk-s-shift",
             L"-fvk-b-shift",
             L"-fvk-u-shift",
         };
@@ -303,7 +303,7 @@ namespace ShaderMake {
 
                     regShifts.push_back(dxcRegShiftArgs[reg]);
 
-                    swprintf(buf, COUNT_OF(buf), L"%u", (&m_Ctx->options->sRegShift)[reg]);
+                    swprintf(buf, COUNT_OF(buf), L"%u", (&m_Ctx->options->tRegShift)[reg]);
                     regShifts.push_back(std::wstring(buf));
 
                     swprintf(buf, COUNT_OF(buf), L"%u", space);
@@ -517,6 +517,12 @@ namespace ShaderMake {
             std::filesystem::path filenameWithoutTargetExtension = (m_Ctx->options->baseDirectory / m_Ctx->options->outputDir / taskData.filepath.filename());
             taskData.finalOutputPathNoExtension = filenameWithoutTargetExtension.replace_extension(m_Ctx->options->outputExt);
 
+            if (taskData.blob)
+            {
+                taskData.blob->data = (uint8_t *)codeBlob->GetBufferPointer();
+                taskData.blob->dataSize = codeBlob->GetBufferSize();
+            }
+
             m_Ctx->DumpShader(taskData, (uint8_t *)codeBlob->GetBufferPointer(), codeBlob->GetBufferSize());
         }
 
@@ -632,8 +638,8 @@ namespace ShaderMake {
                         {
                             for (uint32_t space = 0; space < SPIRV_SPACES_NUM; space++)
                             {
-                                cmd << " -fvk-s-shift " << m_Ctx->options->sRegShift << " " << space;
                                 cmd << " -fvk-t-shift " << m_Ctx->options->tRegShift << " " << space;
+                                cmd << " -fvk-s-shift " << m_Ctx->options->sRegShift << " " << space;
                                 cmd << " -fvk-b-shift " << m_Ctx->options->bRegShift << " " << space;
                                 cmd << " -fvk-u-shift " << m_Ctx->options->uRegShift << " " << space;
                             }
@@ -720,8 +726,8 @@ namespace ShaderMake {
                         {
                             for (uint32_t space = 0; space < SPIRV_SPACES_NUM; space++)
                             {
-                                cmd << " -fvk-s-shift " << m_Ctx->options->sRegShift << " " << space;
                                 cmd << " -fvk-t-shift " << m_Ctx->options->tRegShift << " " << space;
+                                cmd << " -fvk-s-shift " << m_Ctx->options->sRegShift << " " << space;
                                 cmd << " -fvk-b-shift " << m_Ctx->options->bRegShift << " " << space;
                                 cmd << " -fvk-u-shift " << m_Ctx->options->uRegShift << " " << space;
                             }

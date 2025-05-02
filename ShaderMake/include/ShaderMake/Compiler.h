@@ -114,6 +114,7 @@ namespace Utils {
     {
         Error,
         Success,
+        SkipCompile,
     };
 
     struct DxcInstance
