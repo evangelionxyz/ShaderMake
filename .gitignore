@@ -4,3 +4,8 @@ build*/
 bin/
 .vs
 .vscode
+ShaderMake.sln
+*.vcxproj
+*.vcxproj.filters
+bin-int
+**.vcxproj.user
