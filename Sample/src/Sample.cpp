@@ -19,17 +19,16 @@ int main(int argc, char **argv)
 
     ShaderContextDesc shaderDesc = ShaderContextDesc();
     bool forceRecompile = true;
-    
     std::shared_ptr<ShaderContext> shaderA = std::make_shared<ShaderContext>("imgui.vertex.hlsl", ShaderType::Vertex, shaderDesc, forceRecompile);
-    std::shared_ptr<ShaderContext> shaderB = std::make_shared<ShaderContext>("imgui.pixel.hlsl", ShaderType::Pixel, shaderDesc, forceRecompile);
+    std::shared_ptr<ShaderContext> shaderB = std::make_shared<ShaderContext>("imgui.pixel.hlsl", ShaderType::Pixel, shaderDesc, false);
     std::shared_ptr<ShaderContext> shaderC = std::make_shared<ShaderContext>("test.vertex.hlsl", ShaderType::Vertex, shaderDesc, forceRecompile);
-    std::shared_ptr<ShaderContext> shaderD = std::make_shared<ShaderContext>("test.pixel.hlsl", ShaderType::Pixel, shaderDesc, forceRecompile);
+    std::shared_ptr<ShaderContext> shaderD = std::make_shared<ShaderContext>("test.pixel.hlsl", ShaderType::Pixel, shaderDesc, false);
     std::shared_ptr<ShaderContext> shaderE = std::make_shared<ShaderContext>("default.vertex.hlsl", ShaderType::Vertex, shaderDesc, forceRecompile);
-    std::shared_ptr<ShaderContext> shaderF = std::make_shared<ShaderContext>("default.pixel.hlsl", ShaderType::Pixel, shaderDesc, forceRecompile);
-    std::shared_ptr<ShaderContext> shaderG = std::make_shared<ShaderContext>("default_2d.vertex.hlsl", ShaderType::Vertex, shaderDesc, forceRecompile);
+    std::shared_ptr<ShaderContext> shaderF = std::make_shared<ShaderContext>("default.pixel.hlsl", ShaderType::Pixel, shaderDesc, false);
+    std::shared_ptr<ShaderContext> shaderG = std::make_shared<ShaderContext>("default_2d.vertex.hlsl", ShaderType::Vertex, shaderDesc, false);
     std::shared_ptr<ShaderContext> shaderH = std::make_shared<ShaderContext>("default_2d.pixel.hlsl", ShaderType::Pixel, shaderDesc, forceRecompile);
 
-    CompileStatus status = ctx.CompileOrGetShader({ shaderA, shaderB, shaderC, shaderD, shaderE, shaderG, shaderF, shaderH });
+    CompileStatus status = ctx.CompileShader({ shaderA, shaderB, shaderC, shaderD, shaderE, shaderG, shaderF, shaderH });
 
     // compile with .cfg file
     // TODO: get shader compilation result (blob)

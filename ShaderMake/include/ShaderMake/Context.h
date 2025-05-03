@@ -439,8 +439,7 @@ public:
     bool CreateBlob(const std::string &blobName, const std::vector<BlobEntry> &entries, bool useTextOutput);
     void RemoveIntermediateBlobFiles(const std::vector<BlobEntry> &entries);
 
-    CompileStatus CompileOrGetShader(std::initializer_list<std::shared_ptr<ShaderContext>> shaderContexts);
-
+    CompileStatus CompileShader(std::initializer_list<std::shared_ptr<ShaderContext>> shaderContexts);
     CompileStatus CompileConfigFile(const std::string &configFilename);
 
     Context() = default;

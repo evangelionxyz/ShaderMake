@@ -743,10 +743,12 @@ void Context::RemoveIntermediateBlobFiles(const std::vector<BlobEntry> &entries)
     }
 }
 
-CompileStatus Context::CompileOrGetShader(std::initializer_list<std::shared_ptr<ShaderContext>> shaderContexts)
+CompileStatus Context::CompileShader(std::initializer_list<std::shared_ptr<ShaderContext>> shaderContexts)
 {
     if (shaderContexts.size() < 1)
         return CompileStatus::Success;
+
+    bool getBinary = false;
 
     for (auto &shader : shaderContexts)
     {
@@ -764,31 +766,48 @@ CompileStatus Context::CompileOrGetShader(std::initializer_list<std::shared_ptr<
         std::filesystem::path outputDir = options->baseDirectory / options->outputDir;
 
         // Create intermediate output directories
-        bool force = shader->IsForceRecompile();
-
         std::filesystem::path endPath = outputDir / shaderName.parent_path();
         if (!endPath.string().empty() && !std::filesystem::exists(endPath))
         {
             std::filesystem::create_directories(endPath);
-            force = true;
         }
 
-        // Create Tasks
-        std::string outputFileWithoutExt = Utils::PathToString(outputDir / permutationName);
-        TaskData &taskData = tasks.emplace_back();
-        taskData.filepath = shader->GetFilepath();
-        taskData.profile = ShaderTypeToProfile(shader->GetType());
-        taskData.shaderModel = shader->GetDesc().shaderModel;
-        taskData.defines = shader->GetDesc().defines;
-        taskData.optimizationLevel = std::min(shader->GetDesc().optimizationLevel, 3u);
-        taskData.entryPoint = shader->GetDesc().entryPoint;
+        // check if the binary exists (and not force compile active)
+        std::filesystem::path binaryFilepath = outputDir / fullpath.filename().replace_extension(options->outputExt);
+        if (std::ifstream binFile(binaryFilepath, std::ios::binary); binFile.is_open() && !shader->IsForceRecompile())
+        {
+            getBinary = true;
 
-        taskData.blob = &shader->blob; // for compile result
+            binFile.seekg(0, std::ios::end);
+            size_t fileSize = static_cast<size_t>(binFile.tellg());
+            shader->blob.data.resize(fileSize / sizeof(uint8_t));
+
+            binFile.seekg(0, std::ios::beg);
+            binFile.read(reinterpret_cast<char *>(shader->blob.data.data()), fileSize);
+    
+            binFile.close();
+
+            Utils::Printf(YELLOW "Get shader from compiled binary: " WHITE "'%s'\n", shader->GetFilepath().c_str());
+        }
+        else
+        {
+            // Create Tasks
+            std::string outputFileWithoutExt = Utils::PathToString(outputDir / permutationName);
+            TaskData &taskData = tasks.emplace_back();
+            taskData.filepath = shader->GetFilepath();
+            taskData.profile = ShaderTypeToProfile(shader->GetType());
+            taskData.shaderModel = shader->GetDesc().shaderModel;
+            taskData.defines = shader->GetDesc().defines;
+            taskData.optimizationLevel = std::min(shader->GetDesc().optimizationLevel, 3u);
+            taskData.entryPoint = shader->GetDesc().entryPoint;
+
+            taskData.blob = &shader->blob; // for compile result
+        }
     }
 
     bool processStatus = ProcessTasks();
 
-    return processStatus ? CompileStatus::Success : CompileStatus::Error;
+    return (processStatus || getBinary) ? CompileStatus::Success : CompileStatus::Error;
 }
 
 CompileStatus Context::CompileConfigFile(const std::string &configFilename)
@@ -969,18 +988,16 @@ bool Context::ProcessTasks()
         if (failedTaskCount)
         {
             Utils::Printf(YELLOW "WARNING: %u task(s) failed to complete!\n", failedTaskCount.load());
+            return false;
         }
         else
         {
             Utils::Printf(WHITE "%d task(s) completed successfully.\n", originalTaskCount);
+            return true;
         }
     }
-    else
-    {
-        Utils::Printf(WHITE "All %s shaders are up to date.\n", Utils::PlatformToString(options->platformType).c_str());
-    }
 
-    return true;
+    return false;
 }
 
 void Context::ProcessOptions()
