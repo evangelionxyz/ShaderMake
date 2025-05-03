@@ -519,8 +519,11 @@ namespace ShaderMake {
 
             if (taskData.blob)
             {
-                taskData.blob->data = (uint8_t *)codeBlob->GetBufferPointer();
-                taskData.blob->dataSize = codeBlob->GetBufferSize();
+                size_t bufferSize = codeBlob->GetBufferSize();
+                const void* bufferPtr = codeBlob->GetBufferPointer();
+
+                taskData.blob->data.resize(bufferSize);
+                std::memcpy(taskData.blob->data.data(), bufferPtr, bufferSize);
             }
 
             m_Ctx->DumpShader(taskData, (uint8_t *)codeBlob->GetBufferPointer(), codeBlob->GetBufferSize());
