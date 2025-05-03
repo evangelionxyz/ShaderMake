@@ -106,8 +106,8 @@ namespace Utils {
 
     struct ShaderBlob
     {
-        uint8_t *data;
-        size_t dataSize;
+        uint8_t *data = nullptr;
+        size_t dataSize = 0;
     };
 
     enum class CompileStatus
