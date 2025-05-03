@@ -1,7 +1,7 @@
 project "ShaderMake"
     kind "StaticLib"
     language "c++"
-    cppdialect "c++17"
+    cppdialect "c++20"
 
 targetdir (OUTPUT_DIR)
 objdir (INTOUTPUT_DIR)

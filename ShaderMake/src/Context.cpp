@@ -743,7 +743,7 @@ void Context::RemoveIntermediateBlobFiles(const std::vector<BlobEntry> &entries)
     }
 }
 
-CompileStatus Context::CompileShader(std::initializer_list<std::shared_ptr<ShaderContext>> shaderContexts)
+CompileStatus Context::CompileShader(std::vector<std::shared_ptr<ShaderContext>> shaderContexts)
 {
     if (shaderContexts.size() < 1)
         return CompileStatus::Success;
@@ -810,7 +810,7 @@ CompileStatus Context::CompileShader(std::initializer_list<std::shared_ptr<Shade
     return (processStatus || getBinary) ? CompileStatus::Success : CompileStatus::Error;
 }
 
-CompileStatus Context::CompileConfigFile(const std::string &configFilename)
+CompileStatus Context::CompileConfigFile(const std::string &configFilename, bool forceRecompile)
 {
     // Gather shader permutations
     std::filesystem::path configFilepath = options->baseDirectory / configFilename;
@@ -832,7 +832,9 @@ CompileStatus Context::CompileConfigFile(const std::string &configFilename)
 
         // Skip an empty or commented line
         if (line.empty() || line[0] == '\n' || (line[0] == '/' && line[1] == '/'))
+        {
             continue;
+        }
 
         // TODO: preprocessor supports "#ifdef MACRO / #if 1 / #if 0", "#else" and "#endif"
         size_t pos = line.find("#ifdef");
