@@ -1001,12 +1001,33 @@ void Context::ProcessOptions()
     SetDllDirectoryA(options->compilerPath.parent_path().generic_string().c_str());
 #else
     if (options->compilerType == CompilerType_DXC)
+    {
         options->compilerPath = "dxc";
-#endif
+    }
+    
+    if (options->compilerType == CompilerType_Slang)
+    {
+        terminate = true;
+        Utils::Printf(RED "Slang compiler is currently not supported with Linux build!\n");
+        Utils::Printf(RED "Please try DXC and compile to SPIRV!\n");
 
+        return;
+    }
+
+    if (options->platformType ==PlatformType_DXIL)
+    {
+        terminate = true;
+        Utils::Printf(RED "Compile to DXIL is currently not supported with Linux build\n");
+        Utils::Printf(RED "Please try SPIRV!\n");
+
+        return;
+    }
+#endif
     // force to set the target for VULKAN SPIRV
     if (options->platformType == PlatformType_SPIRV)
+    {
         options->defines = { "SPIRV", "TARGET_VULKAN" }; // for VULKAN SPIRV
+    }
 
     // TODO: auto select by the compilation options
     options->outputExt = Utils::PlatformExtension(options->platformType);

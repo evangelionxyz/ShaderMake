@@ -560,14 +560,17 @@ namespace ShaderMake {
             }
 
             bool convertBinaryOutputToHeader = false;
-            std::string outputFile = taskData.filepath.parent_path().generic_string() + m_Ctx->options->outputExt;
+
+            std::filesystem::path filepathCopy = taskData.filepath; 
+            std::string compiledName = filepathCopy.replace_extension("").generic_string() + m_Ctx->options->outputExt;
+            std::string outputFile = m_Ctx->options->baseDirectory / m_Ctx->options->outputDir / compiledName;
 
             // Building command line
             std::ostringstream cmd;
             {
                 cmd << m_Ctx->options->compilerPath.generic_string().c_str(); // call the compiler
 
-                if (m_Ctx->options->slang)
+                if (m_Ctx->options->compilerType == CompilerType_Slang)
                 {
                     if (m_Ctx->options->header || (m_Ctx->options->headerBlob && taskData.combinedDefines.empty()))
                     {
@@ -757,8 +760,8 @@ namespace ShaderMake {
                 }
 
                 // Source file
-                std::filesystem::path sourceFile = m_Ctx->options->baseDirectory / taskData.filepath;
-                cmd << " " << Utils::EscapePath(sourceFile.generic_string());
+                std::string sourceFile = (m_Ctx->options->baseDirectory / taskData.filepath).generic_string();
+                cmd << " " << Utils::EscapePath(sourceFile);
             }
 
             cmd << " 2>&1";

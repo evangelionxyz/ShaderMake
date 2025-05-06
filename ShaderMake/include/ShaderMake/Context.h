@@ -325,7 +325,6 @@ public:
     bool verbose = false;
     bool colorize = true;
     bool useAPI = false;
-    bool slang = false;
     bool slangHlsl = false;
     bool noRegShifts = false;
     int retryCount = 10; // default 10 retries for compilation task sub-process failures
