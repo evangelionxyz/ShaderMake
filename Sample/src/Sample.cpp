@@ -3,6 +3,7 @@
 
 #include <assert.h>
 #include <initializer_list>
+#include <iostream>
 
 using namespace ShaderMake;
 
@@ -16,7 +17,7 @@ int main(int argc, char **argv)
     options.platformType = PlatformType_SPIRV;
 
     Context ctx(&options);
-
+    
     ShaderContextDesc shaderDesc = ShaderContextDesc();
     bool forceRecompile = true;
     std::shared_ptr<ShaderContext> shaderA = std::make_shared<ShaderContext>("imgui.vertex.hlsl", ShaderType::Vertex, shaderDesc, forceRecompile);
@@ -36,5 +37,5 @@ int main(int argc, char **argv)
     ctx.CompileConfigFile("Shader.cfg");
 #endif
 
-    return (ctx.terminate || ctx.failedTaskCount > 0) ? 1 : 0;
+    //return (ctx.terminate || ctx.failedTaskCount > 0) ? 1 : 0;
 }

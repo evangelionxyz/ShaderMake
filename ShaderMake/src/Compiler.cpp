@@ -25,6 +25,7 @@ THE SOFTWARE.
 
 #include <mutex>
 #include <sstream>
+#include <cstring>
 
 namespace ShaderMake {
 
@@ -113,6 +114,7 @@ namespace ShaderMake {
     {
     }
 
+#ifdef _WIN32
     void Compiler::FxcCompile()
     {
         static const uint32_t optimizationLevelRemap[] = {
@@ -532,6 +534,7 @@ namespace ShaderMake {
         // Update progress
         taskData.UpdateProgress(m_Ctx, isSucceeded, false, errorBlob ? (char *)errorBlob->GetBufferPointer() : nullptr);
     }
+#endif
 
     void Compiler::ExeCompile()
     {

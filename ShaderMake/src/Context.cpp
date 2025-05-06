@@ -473,8 +473,10 @@ bool Context::ProcessConfigLine(uint32_t lineIndex, const std::string &line, con
     shaderName.replace_extension("");
     if (options->flatten || configLine.outputDir) // Specifying -o <path> for a shader removes the original path
         shaderName = shaderName.filename();
+
     if (strcmp(configLine.entryPoint, "main"))
         shaderName += "_" + std::string(configLine.entryPoint);
+
     if (configLine.outputSuffix)
         shaderName += std::string(configLine.outputSuffix);
 
@@ -892,9 +894,11 @@ bool Context::ProcessTasks()
 
         // Retry limit for compilation task sub-process failures that can occur when threading
         taskRetryCount = options->retryCount;
-
+        
         // create compiler
         Compiler compiler(this);
+
+#ifdef _WIN32
         std::shared_ptr<DxcInstance> dxcInstance = compiler.DxcCompilerCreate();
         if (!dxcInstance)
         {
@@ -905,27 +909,8 @@ bool Context::ProcessTasks()
         {
             return false;
         }
-
-#if 0
-        uint32_t threadsNum = std::max(options->serial ? 1u : uint32_t(std::thread::hardware_concurrency()), 1u);
-        std::vector<std::thread> threads(threadsNum);
-        for (uint32_t i = 0; i < threadsNum; i++)
-        {
-            if (!options->useAPI)
-                threads[i] = std::thread([&]()
-            {
-                compiler.ExeCompile();
-            });
-#ifdef WIN32
-            else if (options->platform == Platform_DXBC)
-                threads[i] = std::thread(FxcCompile);
-            else
-                threads[i] = std::thread(DxcCompile);
-#endif
-        }
-
-        for (uint32_t i = 0; i < threadsNum; i++)
-            threads[i].join();
+#else
+        compiler.ExeCompile();
 #endif
 
         // Dump shader blobs
@@ -1007,13 +992,16 @@ void Context::ProcessOptions()
     if (!options)
         return;
 
-    const std::string vulkanSDKPath = std::getenv("VULKAN_SDK");
-    if (vulkanSDKPath.empty())
+#if _WIN32
+    const char *vulkanSDKPath = std::getenv("VULKAN_SDK");
+    if (vulkanSDKPath == nullptr)
         return;
 
-#if _WIN32
-    options->compilerPath = vulkanSDKPath + "/Bin/" + Utils::CompilerExecutablePath(options->compilerType);
+    options->compilerPath = std::string(vulkanSDKPath) + "/Bin/" + Utils::CompilerExecutablePath(options->compilerType);
     SetDllDirectoryA(options->compilerPath.parent_path().generic_string().c_str());
+#else
+    if (options->compilerType == CompilerType_DXC)
+        options->compilerPath = "dxc";
 #endif
 
     // force to set the target for VULKAN SPIRV

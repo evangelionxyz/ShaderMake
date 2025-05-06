@@ -28,7 +28,10 @@ THE SOFTWARE.
 #include <atomic>
 #include <mutex>
 #include <array>
-
+#include <filesystem>
+#include <list>
+#include <iterator>
+#include <algorithm>
 #include <fstream>
 #include <stdarg.h>
 
@@ -37,24 +40,20 @@ THE SOFTWARE.
 #ifdef _WIN32
 #   include <d3dcompiler.h> // FXC
 #   include <dxcapi.h> // DXC
-
-#include <wrl/client.h>
+#   include <wrl/client.h>
 using Microsoft::WRL::ComPtr;
-
 #else
 #   include <unistd.h>
 #   include <limits.h>
+#   include <cstring>
 #endif
 
-#include <filesystem>
-#include <list>
-
 #ifdef SHADERMAKE_COLORS
-#define RED "\x1b[31m"
-#define GRAY "\x1b[90m"
-#define WHITE "\x1b[0m"
-#define GREEN "\x1b[32m"
-#define YELLOW "\x1b[33m"
+#   define RED "\x1b[31m"
+#   define GRAY "\x1b[90m"
+#   define WHITE "\x1b[0m"
+#   define GREEN "\x1b[32m"
+#   define YELLOW "\x1b[33m"
 #endif
 
 #define _L(x)  __L(x)
@@ -135,16 +134,20 @@ static std::string EscapePath(const std::string &s)
 static void TrimConfigLine(std::string &s)
 {
     // Remove leading whitespace
-    s.erase(s.begin(), find_if(s.begin(), s.end(), [](char ch) { return !IsSpace(ch); }));
+    s.erase(s.begin(), std::find_if(s.begin(), s.end(), 
+    [](char ch) 
+    { 
+        return !IsSpace(ch);
+    }));
 
     // Remove trailing whitespace
     s.erase(find_if(s.rbegin(), s.rend(), [](char ch) { return !IsSpace(ch); }).base(), s.end());
 
     // Tabs to spaces
-    replace(s.begin(), s.end(), '\t', ' ');
+    std::replace(s.begin(), s.end(), '\t', ' ');
 
     // Remove double spaces
-    std::string::iterator newEnd = unique(s.begin(), s.end(), HasRepeatingSpace);
+    std::string::iterator newEnd = std::unique(s.begin(), s.end(), HasRepeatingSpace);
     s.erase(newEnd, s.end());
 }
 static void TokenizeConfigLine(char *in, std::vector<const char *> &tokens)
