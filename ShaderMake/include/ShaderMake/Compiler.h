@@ -115,11 +115,12 @@ namespace Utils {
         Error,
         Success,
     };
-
     struct DxcInstance
     {
+#ifdef _WIN32
         Microsoft::WRL::ComPtr<IDxcCompiler3> compiler;
         Microsoft::WRL::ComPtr<IDxcUtils> utils;
+#endif
     };
 
     class Compiler
@@ -130,13 +131,14 @@ namespace Utils {
         void ExeCompile();
         void FxcCompile();
 
+#ifdef _WIN32
         std::shared_ptr<DxcInstance> DxcCompilerCreate();
-
         CompileStatus DxcCompile(std::shared_ptr<DxcInstance> &dxcInstance);
-
+#endif
     private:
+#ifdef _WIN32
         void DxcCompileTask(std::shared_ptr<DxcInstance> &dxcInstance, TaskData &taskData);
-
+#endif
         Context *m_Ctx = nullptr;
     };
 

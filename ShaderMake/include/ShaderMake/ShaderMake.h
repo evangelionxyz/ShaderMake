@@ -24,7 +24,6 @@ THE SOFTWARE.
 
 #include <signal.h>
 
-#include "argparse.h"
 #include "Compiler.h"
 #include "Context.h"
 #include "ShaderBlob.h"
