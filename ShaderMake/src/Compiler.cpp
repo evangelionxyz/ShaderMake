@@ -563,7 +563,7 @@ namespace ShaderMake {
 
             std::filesystem::path filepathCopy = taskData.filepath; 
             std::string compiledName = filepathCopy.replace_extension("").generic_string() + m_Ctx->options->outputExt;
-            std::string outputFile = m_Ctx->options->baseDirectory / m_Ctx->options->outputDir / compiledName;
+            std::string outputFile = (m_Ctx->options->baseDirectory / (m_Ctx->options->outputDir + "/" + compiledName)).generic_string();
 
             // Building command line
             std::ostringstream cmd;

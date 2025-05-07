@@ -442,7 +442,7 @@ public:
     void RemoveIntermediateBlobFiles(const std::vector<BlobEntry> &entries);
 
     CompileStatus CompileShader(std::vector<std::shared_ptr<ShaderContext>> shaderContexts);
-    CompileStatus CompileConfigFile(const std::string &configFilename, bool foreceRecompile = false);
+    CompileStatus CompileConfigFile(const std::string &configFilename);
 
     Context() = default;
     Context(Options *opts);

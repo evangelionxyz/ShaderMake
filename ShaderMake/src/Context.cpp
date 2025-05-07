@@ -812,7 +812,7 @@ CompileStatus Context::CompileShader(std::vector<std::shared_ptr<ShaderContext>>
     return (processStatus || getBinary) ? CompileStatus::Success : CompileStatus::Error;
 }
 
-CompileStatus Context::CompileConfigFile(const std::string &configFilename, bool forceRecompile)
+CompileStatus Context::CompileConfigFile(const std::string &configFilename)
 {
     // Gather shader permutations
     std::filesystem::path configFilepath = options->baseDirectory / configFilename;
