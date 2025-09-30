@@ -354,7 +354,9 @@ enum class ShaderType
 {
     Vertex,
     Pixel,
-    Geometry
+    Geometry,
+    Compute,
+    Tessellation,
 };
 
 static const char *ShaderTypeToProfile(ShaderType type)
@@ -367,6 +369,10 @@ static const char *ShaderTypeToProfile(ShaderType type)
             return "ps";
         case ShaderMake::ShaderType::Geometry:
             return "gs";
+        case ShaderMake::ShaderType::Compute:
+            return "cs";
+        case ShaderMake::ShaderType::Tessellation:
+            return "ts";
         default:
             return "invalid";
     }
